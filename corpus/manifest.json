@@ -191,5 +191,69 @@
    "not_in_repo": true,
    "downloaded_at": "2026-09-30"
   }
- ]
+ ],
+ "translations": {
+  "note": "English translations for the English gate (docs/ENGLISH_GATE.md). Fetched by corpus/fetch_translations.py; files live in corpus/data/translations/ (git-ignored). sha256 is pinned here; a changed upstream fails the fetch unless --repin.",
+  "items": [
+   {
+    "id": "hadeethenc_en",
+    "kind": "hadith",
+    "source": "HadeethEnc.com (Encyclopedia of Translated Prophetic Hadiths) — API, English",
+    "api": "https://hadeethenc.com/api/v1/hadeeths/one/?language=en&id={id}",
+    "key": "hadeethenc_en",
+    "priority": 1,
+    "version": "v1.25.0 (2026-05-10 17:43:35)",
+    "version_note": "The API exposes no version; this string is read from the bulk EN workbook header at fetch time.",
+    "license": "HadeethEnc API docs (read 2026-10-03): «Contents of the project can be used, with the following terms and conditions: 1. No modification, addition, or deletion of the content. 2. Clearly referring to the publisher and the source (HadeethEnc.com).»",
+    "license_url": "https://hadeethenc.com/api-docs",
+    "filename": "translations/hadeethenc_en.jsonl",
+    "ids_source": "HadeethEnc ids present in the Arabic corpus (manifest source hadeethenc_ar)",
+    "ids_total": 3582,
+    "records": 2328,
+    "missing_english": 1254,
+    "missing_file": "translations/hadeethenc_en.missing.json",
+    "modifications": "none; `link` is constructed from the id (https://hadeethenc.com/en/browse/hadith/{id})",
+    "sha256": "3b51594a6a5033dba1470d6f88c62c8bb718de677cb931e5e198c24bb2abd0ce",
+    "downloaded_at": "2026-10-03"
+   },
+   {
+    "id": "quranenc_english_saheeh",
+    "kind": "quran",
+    "source": "QuranEnc.com (Encyclopedia of the Noble Quran) — API",
+    "api": "https://quranenc.com/api/v1/translation/sura/english_saheeh/{sura}",
+    "key": "english_saheeh",
+    "priority": 1,
+    "title": "English Translation - Noor International Center",
+    "version": "1.1.2",
+    "upstream_last_update": "2025-06-24",
+    "license": "QuranEnc.com publishes «free and trustworthy translations … accessible and shareable» (About page, read 2026-10-03; no separate licence page exists). Translation copyright remains with the issuing body named in `title`. Our use: retrieval + attributed, unmodified display of the matched ayah translation.",
+    "license_url": "https://quranenc.com/en/home/about",
+    "filename": "translations/quranenc_english_saheeh.jsonl",
+    "expected_records": 6236,
+    "records": 6236,
+    "modifications": "none (footnote markers like [2] are kept in the stored text; stripped only at tokenisation)",
+    "sha256": "6792bcbe4c8c63fa941227e5b7c287e5beca6550a193fcb382265b2028370776",
+    "downloaded_at": "2026-10-03"
+   },
+   {
+    "id": "quranenc_english_rwwad",
+    "kind": "quran",
+    "source": "QuranEnc.com (Encyclopedia of the Noble Quran) — API",
+    "api": "https://quranenc.com/api/v1/translation/sura/english_rwwad/{sura}",
+    "key": "english_rwwad",
+    "priority": 2,
+    "title": "English Translation - Rowwad Translation Center",
+    "version": "1.0.19",
+    "upstream_last_update": "2026-03-12",
+    "license": "QuranEnc.com publishes «free and trustworthy translations … accessible and shareable» (About page, read 2026-10-03; no separate licence page exists). Translation copyright remains with the issuing body named in `title`. Our use: retrieval + attributed, unmodified display of the matched ayah translation.",
+    "license_url": "https://quranenc.com/en/home/about",
+    "filename": "translations/quranenc_english_rwwad.jsonl",
+    "expected_records": 6236,
+    "records": 6236,
+    "modifications": "none (footnote markers like [2] are kept in the stored text; stripped only at tokenisation)",
+    "sha256": "1212a8764fda4a78988c5e0733cb66426f3d4117c90f973eca927fe96123e80b",
+    "downloaded_at": "2026-10-03"
+   }
+  ]
+ }
 }

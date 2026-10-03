@@ -22,6 +22,7 @@ from app.match.harakat import compare_words
 from app.pipeline import Pipeline
 from app.schemas import CheckRequest, CheckResponse
 
+
 async def _run(pipeline: Pipeline, text: str) -> CheckResponse:
     return await pipeline.check(CheckRequest(text=text))
 
