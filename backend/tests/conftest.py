@@ -44,7 +44,11 @@ def fixture_dir() -> Path:
 
 @pytest.fixture(scope="session")
 def test_settings(fixture_dir: Path) -> Settings:
-    return replace(Settings(), index_dir=fixture_dir, rate_limit_per_min=1000, eval_key="test-eval-key")
+    # static_dir=None: tests must not depend on whether `frontend/dist` happens to be built
+    # (the SPA catch-all would turn an expected 404 into 405 on POST).
+    return replace(
+        Settings(), index_dir=fixture_dir, rate_limit_per_min=1000, eval_key="test-eval-key", static_dir=None
+    )
 
 
 @pytest.fixture(scope="session")

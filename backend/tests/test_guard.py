@@ -117,7 +117,9 @@ async def test_summaries_contain_no_religious_text(pipeline: Pipeline, test_sett
     # Arabic summary only uses the fixed template vocabulary (+ digits)
     allowed = set(ARABIC_LETTERS.findall(" ".join(guard_messages.all_templates())))
     for n in (1, 2, 3, 11):
-        allowed |= set(ARABIC_LETTERS.findall(f"{guard_messages.arabic_count(n)} {guard_messages.arabic_k(n)}"))
+        allowed |= set(
+            ARABIC_LETTERS.findall(f"{guard_messages.arabic_count(n)} {guard_messages.arabic_k(n)}")
+        )
     assert set(ARABIC_LETTERS.findall(out["summary_ar"])) <= allowed
 
 
