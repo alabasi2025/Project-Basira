@@ -3,7 +3,9 @@ SKIPPED when neither the fixture nor the full index exists (CI without corpus do
 
 from __future__ import annotations
 
+import contextlib
 import json
+import resource
 import subprocess
 import sys
 from collections.abc import AsyncIterator
@@ -20,6 +22,13 @@ from app.retrieve.index import Retriever
 from app.store import Store, load_store
 
 REPO = Path(__file__).resolve().parents[2]
+
+# Every `client` fixture boots an app whose snapshot keeps ~15 mmap'd .npy files open for the app's
+# lifetime; with 270+ tests the default soft limit of 1024 fds is reached (ENFILE in test_snapshot).
+# Raise the soft limit to the hard limit — a test-process concern only, nothing in the product changes.
+with contextlib.suppress(ValueError, OSError):
+    _soft, _hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    resource.setrlimit(resource.RLIMIT_NOFILE, (min(_hard, 65536), _hard))
 FIXTURE = REPO / "corpus" / "fixture"
 FULL = REPO / "corpus" / "index"
 

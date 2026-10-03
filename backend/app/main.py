@@ -36,8 +36,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.byok import ByokError, build_providers, catalog_payload, parse_headers, verify_key
-from app.config import Settings
+from app.byok import DEFAULT_MODEL as DEFAULT_MODEL_ID
+from app.byok import (
+    ByokError,
+    ModelConfig,
+    build_providers,
+    catalog_payload,
+    clear_config,
+    config_path,
+    load_config,
+    save_config,
+    validate,
+    verify_key,
+)
+from app.config import REPO_ROOT, Settings
 from app.config import settings as default_settings
 from app.devgate import DevGateError, grounding_rules
 from app.english_gate import EnglishGate
@@ -150,10 +162,16 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         meta = CorpusMeta.from_manifest(manifest, store.meta)
         app.state.llm = make_llm(cfg.llm_provider)
         app.state.vision = make_vision(cfg.vision_provider)
+        picker = make_picker(cfg.llm_provider)
+        # E-051: a key saved once from /settings lives on the server and wins over env defaults.
+        app.state.model_config = load_config(config_path(REPO_ROOT))
+        if app.state.model_config is not None:
+            app.state.llm, app.state.vision, picker = build_providers(app.state.model_config)
+            log.info("model config loaded: %s", app.state.model_config.model)  # never the key
         english = EnglishGate.from_path(
             store,
             cfg.index_dir / "translations.pkl",
-            make_picker(cfg.llm_provider),
+            picker,
             hadeethenc_link_only=(cfg.hadeethenc_mode == "link"),
         )
         app.state.pipeline = Pipeline(store, retriever, app.state.llm, cfg, meta, english=english)
@@ -174,14 +192,8 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(cfg.cors_origins),
-        allow_methods=["GET", "POST"],
-        allow_headers=[
-            "Content-Type",
-            "X-Eval-Key",
-            "X-Basira-LLM-Key",
-            "X-Basira-LLM-Model",
-            "X-Basira-LLM-Base",
-        ],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_headers=["Content-Type", "X-Eval-Key"],
         max_age=600,
     )
 
@@ -321,12 +333,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
             raise ApiError(413, "text_too_long", max=cfg.max_text_chars)
         if not req.text.strip():
             raise ApiError(422, "invalid_input")
-        byok = parse_headers(request.headers)
-        if byok is None:
-            resp = await pipeline.check(req)
-        else:
-            llm, _vision, picker = build_providers(byok)
-            resp = await pipeline.check(req, llm=llm, picker=picker)
+        resp = await pipeline.check(req)
         # Developer gate: the reproducibility contract is also a header, so proxies/log pipelines can
         # record it without parsing the body (docs/API.md §Determinism).
         return JSONResponse(
@@ -354,11 +361,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         data = await image.read(MAX_IMAGE_BYTES + 1)
         if len(data) > MAX_IMAGE_BYTES:
             raise ApiError(413, "image_too_large", max_mb=MAX_IMAGE_BYTES // (1024 * 1024))
-        byok = parse_headers(request.headers)
         vision = request.app.state.vision
-        llm = picker = None
-        if byok is not None:
-            llm, vision, picker = build_providers(byok)
         try:
             ocr = await vision.ocr(data, mime=mime)
         except ProviderError:
@@ -373,28 +376,66 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         notices: list[str] = []
         if vision.name == "mock":
             notices.append("ocr_mock")  # never present fixture text as if it were read from the image
-        resp = await pipeline.check(req, extra_notices=notices, llm=llm, picker=picker)
+        resp = await pipeline.check(req, extra_notices=notices)
         resp.ocr_text = text.strip() or None
         return resp
 
-    # ------------------------------------------------------------- BYOK (E-051, docs/MODELS.md)
-    @app.get("/v1/models")
-    async def models() -> Any:
-        """Curated model catalog with measured numbers. Static; no key needed."""
+    # ------------------------------------------------------------- model config (E-051, docs/MODELS.md)
+    def _apply_model_config(mc: ModelConfig | None) -> None:
+        """Swap the live providers in-process (same pipeline object; the deterministic core is untouched)."""
+        request_app = app
+        if mc is None:
+            request_app.state.llm = make_llm(cfg.llm_provider)
+            request_app.state.vision = make_vision(cfg.vision_provider)
+            picker = make_picker(cfg.llm_provider)
+        else:
+            request_app.state.llm, request_app.state.vision, picker = build_providers(mc)
+        request_app.state.model_config = mc
+        pipeline: Pipeline | None = getattr(request_app.state, "pipeline", None)
+        if pipeline is not None:
+            pipeline.llm = request_app.state.llm
+            pipeline.english.picker = picker
+
+    def _config_payload(mc: ModelConfig | None) -> dict[str, Any]:
         return {
-            "default": next(m["id"] for m in catalog_payload() if m["default"]),
-            "models": catalog_payload(),
+            "configured": mc is not None,
+            "model": mc.model if mc else None,
+            "key_masked": mc.masked if mc else None,
+            "provider": app.state.llm.name if getattr(app.state, "llm", None) else cfg.llm_provider,
         }
 
-    @app.post("/v1/models/verify", responses={400: {"model": ErrorResponse}, 429: {"model": ErrorResponse}})
-    async def models_verify(request: Request) -> Any:
-        """Prove a key+model pair works with one 5-token completion. The key is read from the header,
-        used once, and discarded; the response never echoes it."""
+    @app.get("/v1/models")
+    async def models() -> Any:
+        """Curated catalog with measured numbers + the current server-side configuration (key masked)."""
+        mc: ModelConfig | None = getattr(app.state, "model_config", None)
+        return {"default": DEFAULT_MODEL_ID, "models": catalog_payload(), "config": _config_payload(mc)}
+
+    @app.put("/v1/models/config", responses={400: {"model": ErrorResponse}, 429: {"model": ErrorResponse}})
+    async def models_config_put(body: dict[str, Any], request: Request) -> Any:
+        """Save the Genspark key + model on the server (once). Verifies the pair with one 5-token call first;
+        a key that fails is not saved. The response never echoes the key."""
         _guard(request)
-        byok = parse_headers(request.headers)
-        if byok is None:
-            raise ByokError("byok_key_invalid")
-        return await verify_key(byok)
+        api_key = str(body.get("api_key", "") or "")
+        model = str(body.get("model", "") or "")
+        current: ModelConfig | None = getattr(app.state, "model_config", None)
+        if not api_key and current is not None:
+            api_key = current.api_key  # model change only; keep the saved key
+        mc = validate(api_key, model)
+        check = await verify_key(mc)
+        if not check.get("ok"):
+            return JSONResponse(
+                status_code=400, content={"saved": False, **check, "config": _config_payload(current)}
+            )
+        save_config(config_path(REPO_ROOT), mc)
+        _apply_model_config(mc)
+        return {"saved": True, **check, "config": _config_payload(mc)}
+
+    @app.delete("/v1/models/config")
+    async def models_config_delete(request: Request) -> Any:
+        _guard(request)
+        clear_config(config_path(REPO_ROOT))
+        _apply_model_config(None)
+        return {"saved": False, "config": _config_payload(None)}
 
     @app.get("/v1/sources", response_model=list[SourceInfo])
     async def sources(request: Request) -> list[SourceInfo]:

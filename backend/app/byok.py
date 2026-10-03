@@ -1,36 +1,33 @@
-"""BYOK — bring-your-own-key model selection (E-051).
+"""Server-side model configuration (E-051): one Genspark key, one model, set once from ``/settings``.
 
-The product is deterministic; the model only *proposes spans* (extraction), *reads images* (OCR) and
-*picks an approved English translation* (E-048). None of those paths lets model text reach the user.
-So letting a visitor plug in their own Genspark proxy key is safe by construction, provided:
+The key is entered once in the UI, stored **on the server** (``backend/.runtime/model.json``, mode 0600,
+git-ignored) and used by the live providers for extraction (span proposals), OCR and the English picker.
+It never travels in request headers, never appears in any response (``/v1/models`` only reports
+``configured: true/false`` and a masked tail), never in logs (class-only logging everywhere).
 
-* the key is **never stored** on the server — it travels in a request header and dies with the request
-  (ADR-004: we store nothing; logs carry method/path/status only, never headers);
-* the key never appears in any response, error envelope or log line;
-* the model id is validated against the curated catalog below (a visitor cannot route us to an arbitrary
-  model string) — the catalog is what the UI shows, with numbers **measured on 2026-10-03** by
-  ``scripts/bench_models.py`` against this repository's real extraction prompt and a real OCR image;
-* a bad key degrades exactly like any provider failure: rules-only extraction, ``extraction_degraded=true``,
-  OCR → honest empty result. Nothing invents.
+The deterministic core does not depend on the model: the model only proposes *which substrings of the
+user's own text* to check, reads images, and picks among approved translations. Same input ⇒ same
+``determinism_hash`` whatever model is configured.
 
-Headers (CORS-allowed, see ``main.py``)::
-
-    X-Basira-LLM-Key:    gsk-…            (required for BYOK; absent → server defaults)
-    X-Basira-LLM-Model:  <catalog id>     (optional; default = catalog default)
-    X-Basira-LLM-Base:   <url>            (optional; must be an https URL from ALLOWED_BASES)
+Catalog numbers were **measured on 2026-10-03** on this repository's real extraction prompt and a real OCR
+image (``docs/MODELS.md``, ``scripts/bench_models.py``) — they are not vendor claims.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 import httpx
 
 from app.english_gate import EnglishPicker
-from app.providers.base import LLMClient, ProviderError, VisionClient
+from app.providers.base import LLMClient, VisionClient
 
 log = logging.getLogger(__name__)
 
@@ -42,25 +39,20 @@ Tier = Literal["flagship", "balanced", "fast"]
 
 @dataclass(frozen=True, slots=True)
 class ModelInfo:
-    """One catalog row. Numbers are measured, not vendor claims (see ``docs/MODELS.md``)."""
-
     id: str
     label: str
     vendor: str
     tier: Tier
-    cost_x: float  # Genspark relative credit multiplier as displayed in the proxy UI (2026-10-03)
+    cost_x: float
     extract_exact: int  # /6 extraction cases exact-span
     extract_p50_ms: int
-    ocr_ok: bool  # read docs/manual-test/images/01_ayah_typo.png faithfully (3 lines, no additions)
+    ocr_ok: bool
     ocr_ms: int | None
     vision: bool
     note_ar: str
     note_en: str
 
 
-# Measured 2026-10-03 on the Genspark proxy with the owner's key; 6 extraction cases (4 marked Arabic
-# quotes incl. a foreign token inside an ayah, 1 unmarked saying, 1 plain text, 1 English quote).
-# "exact" = produced exactly the gold span list; every model returned only verbatim substrings.
 CATALOG: tuple[ModelInfo, ...] = (
     ModelInfo(
         "gpt-5.4-mini",
@@ -216,30 +208,75 @@ class ByokError(Exception):
 
 
 @dataclass(frozen=True, slots=True)
-class ByokChoice:
+class ModelConfig:
     api_key: str
     model: str
-    base_url: str
+    base_url: str = GENSPARK_BASE
 
     def __repr__(self) -> str:  # never leak the key through repr/logging
-        return f"ByokChoice(model={self.model!r}, base_url={self.base_url!r}, api_key='***')"
+        return f"ModelConfig(model={self.model!r}, base_url={self.base_url!r}, api_key='***')"
+
+    @property
+    def masked(self) -> str:
+        return "…" + self.api_key[-4:] if len(self.api_key) >= 8 else "…"
 
 
-def parse_headers(headers: Any) -> ByokChoice | None:
-    """``None`` when the request carries no key (server defaults apply). Raises ``ByokError`` on a
-    malformed key, an unknown model id or a base URL outside the allow-list."""
-    key = (headers.get("x-basira-llm-key") or "").strip()
-    if not key:
-        return None
+def validate(api_key: str, model: str, base_url: str | None = None) -> ModelConfig:
+    key = (api_key or "").strip()
     if not _KEY_RE.match(key):
         raise ByokError("byok_key_invalid")
-    model = (headers.get("x-basira-llm-model") or DEFAULT_MODEL).strip()
+    model = (model or DEFAULT_MODEL).strip()
     if model not in CATALOG_IDS:
         raise ByokError("byok_model_unknown")
-    base = (headers.get("x-basira-llm-base") or GENSPARK_BASE).strip().rstrip("/")
+    base = (base_url or GENSPARK_BASE).strip().rstrip("/")
     if base not in ALLOWED_BASES:
         raise ByokError("byok_base_not_allowed")
-    return ByokChoice(key, model, base)
+    return ModelConfig(key, model, base)
+
+
+# ----------------------------------------------------------------------------- persistence (server-side)
+
+
+def config_path(repo_root: Path) -> Path:
+    return Path(os.environ.get("BASIRA_MODEL_CONFIG", str(repo_root / "backend" / ".runtime" / "model.json")))
+
+
+def load_config(path: Path) -> ModelConfig | None:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        return validate(str(raw.get("api_key", "")), str(raw.get("model", "")), raw.get("base_url"))
+    except (OSError, ValueError, ByokError):
+        return None
+
+
+def save_config(path: Path, cfg: ModelConfig) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(
+        json.dumps({"api_key": cfg.api_key, "model": cfg.model, "base_url": cfg.base_url}), encoding="utf-8"
+    )
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+
+
+def clear_config(path: Path) -> None:
+    path.unlink(missing_ok=True)
+
+
+# ----------------------------------------------------------------------------- providers / verification
+
+
+def build_providers(cfg: ModelConfig) -> tuple[LLMClient, VisionClient, EnglishPicker]:
+    from app.providers.openai_compat import (  # noqa: PLC0415
+        OpenAICompatLLM,
+        OpenAICompatPicker,
+        OpenAICompatVision,
+    )
+
+    llm = OpenAICompatLLM(base_url=cfg.base_url, api_key=cfg.api_key, model=cfg.model)
+    vision = OpenAICompatVision(base_url=cfg.base_url, api_key=cfg.api_key, model=cfg.model)
+    picker = OpenAICompatPicker(base_url=cfg.base_url, api_key=cfg.api_key, model=cfg.model)
+    return llm, vision, picker
 
 
 def catalog_payload() -> list[dict[str, Any]]:
@@ -264,26 +301,11 @@ def catalog_payload() -> list[dict[str, Any]]:
     ]
 
 
-def build_providers(choice: ByokChoice) -> tuple[LLMClient, VisionClient, EnglishPicker]:
-    from app.providers.openai_compat import (  # noqa: PLC0415
-        OpenAICompatLLM,
-        OpenAICompatPicker,
-        OpenAICompatVision,
-    )
-
-    llm = OpenAICompatLLM(base_url=choice.base_url, api_key=choice.api_key, model=choice.model)
-    vision = OpenAICompatVision(base_url=choice.base_url, api_key=choice.api_key, model=choice.model)
-    picker = OpenAICompatPicker(base_url=choice.base_url, api_key=choice.api_key, model=choice.model)
-    return llm, vision, picker
-
-
-async def verify_key(choice: ByokChoice, timeout_s: float = 15.0) -> dict[str, Any]:
-    """One tiny completion to prove the key+model pair works. Returns ``{ok, model, latency_ms}`` or
-    ``{ok: False, reason}`` — the reason is a class (``auth``, ``model``, ``transport``), never the body."""
-    import time  # noqa: PLC0415
-
+async def verify_key(cfg: ModelConfig, timeout_s: float = 15.0) -> dict[str, Any]:
+    """One 5-token completion proves the key+model pair works. The reason is a class (``auth`` /
+    ``model`` / ``transport``), never the upstream body."""
     body = {
-        "model": choice.model,
+        "model": cfg.model,
         "temperature": 0,
         "max_tokens": 5,
         "messages": [{"role": "user", "content": "Reply with the single word: ok"}],
@@ -292,23 +314,28 @@ async def verify_key(choice: ByokChoice, timeout_s: float = 15.0) -> dict[str, A
     try:
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             r = await client.post(
-                choice.base_url + "/chat/completions",
-                headers={"Authorization": f"Bearer {choice.api_key}", "Content-Type": "application/json"},
+                cfg.base_url + "/chat/completions",
+                headers={"Authorization": f"Bearer {cfg.api_key}", "Content-Type": "application/json"},
                 json=body,
             )
     except httpx.HTTPError as exc:
         return {"ok": False, "reason": "transport", "detail": exc.__class__.__name__}
     ms = int((time.perf_counter() - t0) * 1000)
+    reason = _classify(r)
+    if reason is not None:
+        return {"ok": False, "reason": reason, "latency_ms": ms}
+    return {"ok": True, "model": cfg.model, "latency_ms": ms}
+
+
+def _classify(r: httpx.Response) -> str | None:
     if r.status_code in (401, 403):
-        return {"ok": False, "reason": "auth", "latency_ms": ms}
+        return "auth"
     if r.status_code == 400:
-        return {"ok": False, "reason": "model", "latency_ms": ms}
+        return "model"
     if r.status_code != 200:
-        return {"ok": False, "reason": "transport", "detail": f"http {r.status_code}", "latency_ms": ms}
+        return "transport"
     try:
         content = r.json()["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError, ValueError):
-        return {"ok": False, "reason": "transport", "detail": "malformed", "latency_ms": ms}
-    if not isinstance(content, str):
-        raise ProviderError("non-string content")
-    return {"ok": True, "model": choice.model, "latency_ms": ms}
+        return "transport"
+    return None if isinstance(content, str) else "transport"

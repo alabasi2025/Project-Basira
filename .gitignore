@@ -23,6 +23,7 @@ coverage/
 *.tsbuildinfo
 
 # --- Logs & runtime ---
+backend/.runtime/
 logs/
 *.log
 npm-debug.log*
