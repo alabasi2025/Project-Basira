@@ -31,6 +31,8 @@ original sandbox; `docs/internal/` is its complete substitute. Never publish `do
 ## 0.7 Competition (read before building anything user-facing)
 **`docs/COMPETITION.md`** = public-safe master analysis (dates, deliverables, judging weights 25/20/15/15/10/10/5, rubric→features, idea-deck commitments, conflicts C1–C5, win plan). Official files + private digest: `docs/internal/competition/` (never publish). **Open: D-012 (C1 baseline transparency) — ask the owner once per session until answered.**
 
+## 0.9 Branch design/claude (2026-10-03) — UI v3, see DECISIONS E-050 (renumbered from E-047 at merge; E-047 = English gate data layer). Merged to main 2026-10-03; owner review pending. Run: `pm2 start ecosystem.config.cjs` (API :8000 serves frontend/dist; UI preview :3000).
+
 ## 1. Done (verified, committed)
 
 | **English gate wired (E-048, 2026-10-03)** | `backend/app/english_gate.py`, `providers/openai_compat.py::OpenAICompatPicker`, `schemas.EnglishCandidate`, `pipeline` (per EN quote), `main.py` (`make_picker`), fixture `translations.pkl`, `tests/test_english_gate.py` (17), `eval/run_english_picker.py` | ✅ | rule-only 11/23 correct · 0 wrong; +model 21–22/23 · 0 wrong; negatives 0/7 (3 models × 2 repeats). pytest **217/217** · lint clean · SMOKE OK · eval-full 150/150, FA 0/500. |

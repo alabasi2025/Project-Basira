@@ -1,56 +1,27 @@
+/** مساحة التحقق — the workspace. Same engine contract as before (E-042 results workspace is reused as-is);
+ *  new: mode tabs (live: text, image · coming soon: English, Guard — never simulated), generated examples
+ *  (from eval/cases.yaml + smoke), and a «what happened» strip that makes the AI's role and the engine's
+ *  role visible for every real response. */
+
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BasiraError, check, checkImage, health, type CheckResponse, type Lang } from "./api";
-import { Icon, LogoMark, type BasiraIconName } from "./brand";
+import { BasiraError, check, checkImage, type CheckResponse, type Lang } from "./api";
+import { Icon, type BasiraIconName } from "./brand";
 import { ResultsView } from "./components/ResultsView";
-import { SourcesFooter } from "./components/SourcesFooter";
 import { MAX_CHARS, msg, ui } from "./i18n";
+import examples from "./__generated__/examples.json";
+import { useHealth } from "./site/hooks";
+import { SoonBadge } from "./site/Shell";
+import { numfmt, t, type SiteKey } from "./site/strings";
 
-type HealthState = "ok" | "loading" | "down";
-type Theme = "light" | "dark";
+type Mode = "text" | "image" | "english" | "guard";
+const MODES: { id: Mode; key: SiteKey; icon: BasiraIconName; live: boolean }[] = [
+  { id: "text", key: "mode_text", icon: "paste-text", live: true },
+  { id: "image", key: "mode_image", icon: "ocr-scan", live: true },
+  { id: "english", key: "mode_en", icon: "language", live: false },
+  { id: "guard", key: "mode_guard", icon: "shield-verify", live: false },
+];
 
-function useHealth(): [HealthState, Record<string, string> | null] {
-  const [state, setState] = useState<HealthState>("loading");
-  const [corpus, setCorpus] = useState<Record<string, string> | null>(null);
-  useEffect(() => {
-    let alive = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const poll = async () => {
-      try {
-        const h = await health();
-        if (!alive) return;
-        if (h.corpus_loaded) {
-          setState("ok");
-          setCorpus(h.corpus);
-          return;
-        }
-        setState("loading");
-      } catch {
-        if (alive) setState("down");
-      }
-      timer = setTimeout(poll, 3000);
-    };
-    void poll();
-    return () => {
-      alive = false;
-      if (timer) clearTimeout(timer);
-    };
-  }, []);
-  return [state, corpus];
-}
-
-function useTheme(): [Theme, () => void] {
-  const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem("basira.theme");
-    if (saved === "light" || saved === "dark") return saved;
-    const mq = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-    return mq?.matches ? "dark" : "light";
-  });
-  useEffect(() => {
-    document.documentElement.dataset["theme"] = theme;
-    localStorage.setItem("basira.theme", theme);
-  }, [theme]);
-  return [theme, () => setTheme((t) => (t === "dark" ? "light" : "dark"))];
-}
+export const EXAMPLES = (examples as { items: { key: string; icon: BasiraIconName; text: string; provenance: string }[] }).items;
 
 export function buildReport(r: CheckResponse, lang: Lang): string {
   const lines = [`${ui(lang, "app_name")} — ${new Date().toISOString()}`, `request_id: ${r.request_id}`, ""];
@@ -63,39 +34,81 @@ export function buildReport(r: CheckResponse, lang: Lang): string {
   return lines.join("\n");
 }
 
-/** Example inputs — every one is verified live against the API in docs/manual-test (T-series).
- *  The texts are user-style inputs, not corpus text; the UI never shows corpus text here. */
-const EXAMPLES: { key: string; icon: BasiraIconName; text: string }[] = [
-  { key: "example_quran_ok", icon: "quran", text: "قال تعالى: ﴿إِنَّ مَعَ الْعُسْرِ يُسْرًا﴾" },
-  { key: "example_quran_typo", icon: "diff-words", text: "قال تعالى: ﴿إن الله علي كل شيء قدير﴾" },
-  { key: "example_hadith", icon: "hadith", text: "قال رسول الله ﷺ: «إنما الأعمال بالنيات» رواه البخاري" },
-  {
-    key: "example_mixed",
-    icon: "paste-text",
-    text: "قرأت اليوم: قال تعالى: ﴿وَقُل رَّبِّ زِدْنِي عِلْمًا﴾، وقال ﷺ: «طلب العلم فريضة على كل مسلم»، وقال تعالى: ﴿فاذكروني أذكركم﴾.",
-  },
-];
+function Pipeline({ r, lang }: { r: CheckResponse; lang: Lang }) {
+  const nf = numfmt(lang);
+  const ai = r.extraction_provider.startsWith("mock") ? null : r.extraction_provider.split(":").pop();
+  return (
+    <section className="pipe" aria-labelledby="pipe-h">
+      <h2 id="pipe-h" className="pipe__title">{t(lang, "pipe_title")}</h2>
+      <ol className="pipe__steps">
+        <li data-kind="ai">
+          <span className="pipe__dot" aria-hidden="true" />
+          <span className="pipe__name">{t(lang, "pipe_ai")}</span>
+          <span className="pipe__desc">
+            {r.extraction_degraded || !ai ? t(lang, "pipe_degraded") : t(lang, "pipe_ai_d")}
+            {ai && <code dir="ltr">{ai}</code>}
+          </span>
+          <b dir="ltr">{nf.format(r.timings_ms.extract)} ms</b>
+        </li>
+        <li data-kind="engine">
+          <span className="pipe__dot" aria-hidden="true" />
+          <span className="pipe__name">{t(lang, "pipe_engine")}</span>
+          <span className="pipe__desc">{t(lang, "pipe_engine_d")}</span>
+          <b dir="ltr">{nf.format(r.timings_ms.match + r.timings_ms.retrieve)} ms</b>
+        </li>
+        <li data-kind="validator">
+          <span className="pipe__dot" aria-hidden="true" />
+          <span className="pipe__name">{t(lang, "pipe_validator")}</span>
+          <span className="pipe__desc">{t(lang, "pipe_validator_d", { n: nf.format(r.validator_rejections) })}</span>
+        </li>
+      </ol>
+      <p className="pipe__corpus">
+        <span>{t(lang, "pipe_corpus")}:</span>
+        {Object.entries(r.corpus).map(([k, v]) => (
+          <code key={k} dir="ltr">
+            {k} {v}
+          </code>
+        ))}
+      </p>
+      <p className="pipe__receipt">
+        <Icon name="share-link" size={16} />
+        {t(lang, "receipt_soon")} <SoonBadge lang={lang} />
+      </p>
+    </section>
+  );
+}
 
-const PILLARS: { key: string; icon: BasiraIconName }[] = [
-  { key: "pillar_byte_exact", icon: "byte-exact" },
-  { key: "pillar_no_generation", icon: "no-generation" },
-  { key: "pillar_no_judgment", icon: "no-judgment" },
-  { key: "pillar_privacy", icon: "privacy-nostore" },
-  { key: "pillar_deterministic", icon: "deterministic" },
-];
+function initialMode(): Mode {
+  const m = new URLSearchParams(location.search).get("mode");
+  return m === "image" || m === "english" || m === "guard" ? m : "text";
+}
+function initialText(): string {
+  const k = new URLSearchParams(location.search).get("example");
+  return EXAMPLES.find((e) => e.key === k)?.text ?? "";
+}
 
-export default function Check({ lang, onLang }: { lang: Lang; onLang: (l: Lang) => void }) {
-  const [text, setText] = useState("");
+export default function Check({ lang }: { lang: Lang; onLang?: (l: Lang) => void }) {
+  const [mode, setMode] = useState<Mode>(initialMode);
+  const [text, setText] = useState(initialText);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CheckResponse | null>(null);
   const [checkedText, setCheckedText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [healthState, corpus] = useHealth();
-  const [theme, toggleTheme] = useTheme();
+  const [drag, setDrag] = useState(false);
+  const { state: healthState } = useHealth();
   const abort = useRef<AbortController | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const u = new URL(location.href);
+    if (mode === "text") u.searchParams.delete("mode");
+    else u.searchParams.set("mode", mode);
+    u.searchParams.delete("example");
+    history.replaceState(null, "", u.pathname + u.search);
+  }, [mode]);
 
   const run = useCallback(
     async (fn: (signal: AbortSignal) => Promise<CheckResponse>) => {
@@ -140,130 +153,158 @@ export default function Check({ lang, onLang }: { lang: Lang; onLang: (l: Lang) 
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
-  const useExample = (t: string) => {
-    setText(t);
+  const pickExample = (s: string) => {
+    setMode("text");
+    setText(s);
     setResult(null);
     setError(null);
     textareaRef.current?.focus();
   };
 
   const n = result?.quotes.length ?? 0;
-  const nf = new Intl.NumberFormat(lang === "ar" ? "ar-SA" : "en");
+  const nf = numfmt(lang);
   const ready = healthState === "ok";
+  const live = MODES.find((m) => m.id === mode)?.live ?? false;
 
   return (
-    <div className="app">
-      <a href="#results" className="skip-link">
-        {ui(lang, "skip_to_results")}
-      </a>
-
-      <header className="topbar">
-        <div className="container container--wide topbar__inner">
-          <a className="brand" href="/">
-            {/* decorative: the visible wordmark next to it is the link's accessible name */}
-            <LogoMark size={40} title="" />
-            <span className="brand__name">
-              <strong>{ui(lang, "app_name")}</strong>
-              <span lang="en">Basira</span>
-            </span>
-          </a>
-          <div className="topbar__actions">
-            <span className="health" data-state={healthState} aria-live="polite">
-              <span className="health__label">
-                {ui(lang, healthState === "ok" ? "status_ok" : healthState === "loading" ? "status_loading" : "status_down")}
-              </span>
-            </span>
-            <button type="button" className="btn btn--ghost btn--icon" onClick={toggleTheme} aria-label={ui(lang, "theme_toggle")} aria-pressed={theme === "dark"}>
-              <Icon name="theme" />
-            </button>
-            <button type="button" className="btn btn--ghost btn--sm btn--lang" lang={lang === "ar" ? "en" : "ar"} onClick={() => onLang(lang === "ar" ? "en" : "ar")}>
-              <Icon name="language" size={18} />
-              <span className="lang__label">{ui(lang, "lang_switch")}</span>
-            </button>
-          </div>
+    <main id="main" className="page page--check">
+      <header className="page-head page-head--tight">
+        <div className="wrap">
+          <h1>{t(lang, "check_title")}</h1>
+          <p>{t(lang, "check_sub")}</p>
         </div>
       </header>
 
-      <main className="container">
-        {!result && (
-          <section className="hero" aria-labelledby="hero-h">
-            <h1 id="hero-h">{ui(lang, "hero_title")}</h1>
-            <p>{ui(lang, "hero_sub")}</p>
-            <ul className="pillars">
-              {PILLARS.map((p) => (
-                <li key={p.key}>
-                  <Icon name={p.icon} size={16} />
-                  {ui(lang, p.key)}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+      <div className="wrap ws">
+        <div className="ws-modes" role="tablist" aria-label={t(lang, "modes_label")}>
+          {MODES.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              role="tab"
+              id={`tab-${m.id}`}
+              aria-selected={mode === m.id}
+              aria-controls="ws-panel"
+              className="ws-mode"
+              onClick={() => setMode(m.id)}
+            >
+              <Icon name={m.icon} size={18} />
+              <span>{t(lang, m.key)}</span>
+              {!m.live && <SoonBadge lang={lang} />}
+            </button>
+          ))}
+        </div>
 
-        <form className="card composer" onSubmit={onSubmit}>
-          <div className="composer__label">
-            <label htmlFor="text">{ui(lang, "input_label")}</label>
-            <small>
-              <kbd>Ctrl</kbd> + <kbd>↵</kbd> {ui(lang, "shortcut_hint")}
-            </small>
-          </div>
-          <textarea
-            id="text"
-            ref={textareaRef}
-            className="input"
-            dir="auto"
-            lang="ar"
-            value={text}
-            maxLength={MAX_CHARS}
-            placeholder={ui(lang, "input_placeholder")}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if ((e.ctrlKey || e.metaKey) && e.key === "Enter") onSubmit(e);
-            }}
-            aria-describedby="chars"
-          />
-          <div className="composer__row">
-            <span id="chars" className="composer__meta">
-              {ui(lang, "chars", { n: nf.format(text.length), max: nf.format(MAX_CHARS) })}
-            </span>
-            <div className="composer__actions">
-              <label className="btn btn--ghost file-btn">
-                <Icon name="upload-image" size={18} />
-                {ui(lang, "upload_image")}
-                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => onFile(e.target.files?.[0])} disabled={busy || !ready} />
-              </label>
-              <button
-                type="button"
-                className="btn btn--ghost"
-                onClick={() => {
-                  setText("");
-                  setResult(null);
-                  setError(null);
+        <div id="ws-panel" role="tabpanel" aria-labelledby={`tab-${mode}`} className="ws-panel">
+          {mode === "text" && (
+            <form className="composer-lux" onSubmit={onSubmit}>
+              <div className="composer-lux__label">
+                <label htmlFor="text">{ui(lang, "input_label")}</label>
+                <span className="health health--inline" data-state={healthState} aria-live="polite">
+                  <span className="health__label">
+                    {ui(lang, healthState === "ok" ? "status_ok" : healthState === "loading" ? "status_loading" : "status_down")}
+                  </span>
+                </span>
+              </div>
+              <textarea
+                id="text"
+                ref={textareaRef}
+                className="composer-lux__input"
+                dir="auto"
+                lang="ar"
+                value={text}
+                maxLength={MAX_CHARS}
+                placeholder={ui(lang, "input_placeholder")}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") onSubmit(e);
                 }}
-                disabled={busy || (!text && !result)}
-              >
-                <Icon name="clear" size={18} />
-                {ui(lang, "clear")}
-              </button>
-              <button type="submit" className="btn btn--primary" disabled={busy || !text.trim() || !ready}>
-                <Icon name={busy ? "spinner" : "check-run"} size={18} />
-                {busy ? ui(lang, "checking") : ui(lang, "check")}
+                aria-describedby="chars"
+              />
+              <div className="composer-lux__row">
+                <span id="chars" className="composer-lux__meta">
+                  {ui(lang, "chars", { n: nf.format(text.length), max: nf.format(MAX_CHARS) })}
+                  <span className="hide-sm">
+                    {" · "}
+                    <kbd>Ctrl</kbd> + <kbd>↵</kbd> {ui(lang, "shortcut_hint")}
+                  </span>
+                </span>
+                <div className="composer-lux__actions">
+                  <button
+                    type="button"
+                    className="btn-ghost-lux"
+                    onClick={() => {
+                      setText("");
+                      setResult(null);
+                      setError(null);
+                    }}
+                    disabled={busy || (!text && !result)}
+                  >
+                    <Icon name="clear" size={18} />
+                    {ui(lang, "clear")}
+                  </button>
+                  <button type="submit" className="btn-lux" disabled={busy || !text.trim() || !ready}>
+                    <Icon name={busy ? "spinner" : "check-run"} size={18} />
+                    {busy ? ui(lang, "checking") : ui(lang, "check")}
+                  </button>
+                </div>
+              </div>
+              {busy && <div className="scanline" aria-hidden="true" />}
+            </form>
+          )}
+
+          {mode === "image" && (
+            <div
+              className="drop"
+              data-drag={drag || undefined}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDrag(true);
+              }}
+              onDragLeave={() => setDrag(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDrag(false);
+                onFile(e.dataTransfer.files[0]);
+              }}
+            >
+              <Icon name="upload-image" size={40} />
+              <p>{t(lang, "svc_image_d")}</p>
+              <label className="btn-lux file-lux">
+                <Icon name={busy ? "spinner" : "upload-image"} size={18} />
+                {busy ? ui(lang, "checking") : ui(lang, "upload_image").replace(/^(أو|or)\s+/, "")}
+                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => onFile(e.target.files?.[0])} disabled={busy || !ready} />
+              </label>
+              <span className="health health--inline" data-state={healthState} aria-live="polite">
+                <span className="health__label">
+                  {ui(lang, healthState === "ok" ? "status_ok" : healthState === "loading" ? "status_loading" : "status_down")}
+                </span>
+              </span>
+              {busy && <div className="scanline" aria-hidden="true" />}
+            </div>
+          )}
+
+          {!live && (
+            <div className="soon-panel">
+              <Icon name="limits" size={32} />
+              <p>{t(lang, mode === "english" ? "soon_panel_en" : "soon_panel_guard")}</p>
+              <p className="muted">{t(lang, mode === "english" ? "svc_en_out" : "svc_guard_out")}</p>
+              <button type="button" className="btn-ghost-lux" onClick={() => setMode("text")}>
+                {t(lang, "go_text_mode")}
               </button>
             </div>
-          </div>
-        </form>
+          )}
+        </div>
 
-        {!result && !text && (
-          <section className="examples" aria-labelledby="ex-h">
-            <h2 id="ex-h" className="examples__title">
-              {ui(lang, "examples_title")}
-            </h2>
-            <ul className="examples__list">
+        {mode === "text" && !result && !text && (
+          <section className="ws-examples" aria-labelledby="ex-h">
+            <h2 id="ex-h">{ui(lang, "examples_title")}</h2>
+            <ul>
               {EXAMPLES.map((ex) => (
                 <li key={ex.key}>
-                  <button type="button" className="example" onClick={() => useExample(ex.text)}>
+                  <button type="button" className="ex-card" onClick={() => pickExample(ex.text)}>
                     <Icon name={ex.icon} size={20} />
-                    <span className="example__text">
+                    <span className="ex-card__text">
                       <small>{ui(lang, ex.key)}</small>
                       <span dir="rtl" lang="ar">
                         {ex.text}
@@ -325,12 +366,22 @@ export default function Check({ lang, onLang }: { lang: Lang; onLang: (l: Lang) 
                 </div>
               )}
               {n > 0 && <ResultsView text={result.ocr_text ?? checkedText} result={result} lang={lang} />}
+              <Pipeline r={result} lang={lang} />
             </>
           )}
         </div>
-      </main>
 
-      <SourcesFooter lang={lang} corpus={corpus} />
-    </div>
+        <aside className="ws-notes" aria-label={t(lang, "nav_trust")}>
+          <p dir="auto">
+            <Icon name="no-generation" size={18} />
+            <span>{msg(lang, "fixed", "transparency_notice")}</span>
+          </p>
+          <p dir="auto">
+            <Icon name="privacy-nostore" size={18} />
+            <span>{msg(lang, "fixed", "privacy_notice")}</span>
+          </p>
+        </aside>
+      </div>
+    </main>
   );
 }
