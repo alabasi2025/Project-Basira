@@ -271,7 +271,7 @@ def load_manifest() -> dict[str, Any]:
 
 
 def save_manifest(m: dict[str, Any]) -> None:
-    MANIFEST.write_text(json.dumps(m, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    MANIFEST.write_text(json.dumps(m, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 
 
 def _section(m: dict[str, Any]) -> dict[str, Any]:
