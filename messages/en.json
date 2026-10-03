@@ -90,6 +90,7 @@
     "image_too_large": "The image exceeds the allowed size ({max_mb} MB).",
     "byok_key_invalid": "The model key is missing or malformed. Enter a valid Genspark key on the settings page.",
     "byok_model_unknown": "The requested model is not in the approved list. Choose one from the list.",
-    "byok_base_not_allowed": "That service URL is not allowed."
+    "byok_base_not_allowed": "That service URL is not allowed.",
+    "receipt_invalid": "Invalid receipt: the token is malformed or was not issued by Basira."
   }
 }

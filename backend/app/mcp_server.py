@@ -9,6 +9,7 @@ Tools (names are a contract; descriptions are written for models):
     guard_answer(answer, ui_lang)         chatbot answer → clear | flagged | no_quotes + fixed summaries
     list_sources()                        provenance: sources, versions, licences, sha256
     grounding_rules(ui_lang)              fixed instructions (the four states, the red lines)
+    issue_receipt(text, ui_lang)          stateless verification receipt: verdicts + token (= the input)
 
 Errors: inputs are validated by the shared core; a problem becomes a tool error with the API's own
 ``{code, message_ar, message_en}`` envelope as text — no stack traces, no internals, no user text.
@@ -31,11 +32,13 @@ from starlette.routing import Route
 from app import __version__
 from app.config import Settings
 from app.devgate import DevGateError, grounding_rules, sources_info
+from app.devgate import issue_receipt as _issue_receipt
 from app.devgate import verify_quote as _verify_quote
 from app.devgate import verify_text as _verify_text
 from app.guard import guard_answer as _guard_answer
 from app.messages import load_messages
 from app.pipeline import Pipeline
+from app.snapshot import LAST_BOOT
 
 log = logging.getLogger("basira.mcp")
 MCP_PATH = "/mcp"
@@ -45,6 +48,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "guard_answer",
     "list_sources",
     "grounding_rules",
+    "issue_receipt",
 )
 
 
@@ -173,6 +177,32 @@ def build_mcp_app(app: FastAPI, settings: Settings) -> Starlette:
     )
     async def grounding_rules_tool(ui_lang: str = "en") -> dict[str, Any]:
         return grounding_rules(ui_lang)
+
+    @server.tool(
+        name="issue_receipt",
+        title="Issue a stateless verification receipt",
+        description=(
+            "Run the same check as verify_text and return a verification receipt: receipt_id, determinism_hash, "
+            "corpus versions, index_sha256, build_sha, issued_at (UTC), summary{quotes, by_status}, the compact "
+            "quotes, and `token` — base64url(zlib(json{v:1,t:text,l:ui_lang})). The token IS the input; nothing is "
+            "stored. Anyone can re-run it later at GET /v/{token}?h=<determinism_hash>: `verified_now` when the fresh "
+            "hash still equals it, `stale` when the corpus build or a verdict changed."
+        ),
+        structured_output=True,
+    )
+    async def issue_receipt(text: str, ui_lang: str = "ar") -> dict[str, Any]:
+        p = _pipeline_of(app, settings)
+        return await _run(
+            settings,
+            lambda: _issue_receipt(
+                p,
+                settings,
+                text,
+                ui_lang,
+                index_sha256=str(LAST_BOOT["index_sha256"]),
+                build_sha=settings.build_sha,
+            ),
+        )
 
     return server.streamable_http_app(
         streamable_http_path=MCP_PATH,
