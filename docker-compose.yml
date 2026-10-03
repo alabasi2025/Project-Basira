@@ -13,8 +13,14 @@ services:
       BASIRA_RATE_LIMIT_PER_MIN: ${BASIRA_RATE_LIMIT_PER_MIN:-30}
       BASIRA_CORS_ORIGINS: ${BASIRA_CORS_ORIGINS:-http://localhost:8000}
       BUILD_SHA: ${BUILD_SHA:-compose}
+      BASIRA_MCP: ${BASIRA_MCP:-1}
+      # B12 — set BOTH to your load balancer's address/CIDR; never '*'
+      BASIRA_TRUSTED_PROXIES: ${BASIRA_TRUSTED_PROXIES:-}
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
     read_only: true
     tmpfs: [/tmp]
+    volumes:
+      - basira-data:/data   # model.json written once from /settings (0600); nothing else is ever written
     mem_limit: 512m
     restart: unless-stopped
     healthcheck:
@@ -22,3 +28,6 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+volumes:
+  basira-data:

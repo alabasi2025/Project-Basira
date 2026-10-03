@@ -1,8 +1,37 @@
 # CHANGELOG
 
-كل التواريخ بتوقيت الرياض (UTC+3). يُحدَّث يوميًا خلال فترة التحدي (4–6 أكتوبر 2026).
+All notable changes. Dates in Riyadh time (UTC+3). Decision ids (`E-nnn`, `D-nnn`) refer to `docs/DECISIONS.md`.
+Format follows [Keep a Changelog](https://keepachangelog.com/); versions are git tags.
 
-## [Unreleased] — upgrade pack v2 (prepared 1 Oct 2026, to be applied on day 1)
+## [0.3.0] — 2026-10-03 — "everything a judge can click is live"
+
+### Added
+- **Safety gates B01–B03** (`D-013`, `D-014`, `E-044`–`E-046`): harakat policy with letter-level diff (conflict / missing / waqf), foreign-material gate inside quotes, byte-identical repeat merging, `diacritic_unverified`. New vocalised reference corpus `tanzil_simple` (sha256-pinned). 15 failing-first tests.
+- **English gate** (`E-047`, `E-048`): QuranEnc + HadeethEnc translations (BM25, 14 800 docs), candidates cross-referenced to byte-exact Arabic, rule picker + optional constrained model picker. 17 tests; recall@5 0.9565; 0 wrong selections across 3 models.
+- **Developer gate** (`E-049`): MCP server at `/mcp` (Streamable HTTP, stateless) with `verify_text`, `verify_quote`, `guard_answer`, `list_sources`, `grounding_rules`; `POST /v1/guard`; `GET /v1/rules`; `X-Basira-Determinism-Hash` header; real OpenAPI examples.
+- **UI v3 platform** (`E-050`): multi-page PWA (`/`, `/check`, `/services`, `/developers`, `/trust`, `/about`), Lens hero on a recorded engine response, trust numbers generated from `eval/` with file+line provenance, lexicon gate over 600+ strings, WebGL backdrop for capable devices only.
+- **Server-side model configuration** (`E-051`): `/settings` enters a Genspark key once; `PUT /v1/models/config` verifies upstream then stores it (0600) and hot-swaps providers; `GET /v1/models` returns the **measured** catalog of 10 models (`docs/MODELS.md`, 20 models benchmarked on the real prompt).
+- **Verification receipt** (`E-052`): `POST /v1/receipt` → stateless token; `GET /v/{token}?h=` replays and reports `verified_now` / `stale`; MCP tool `issue_receipt` (6th).
+- **V6 independent proof** of every `found` and **attribution-only** wording (`E-052`, `I17`).
+- **Audit fixes** (`E-053`): claimed reference compared against every verbatim position (B06) + `claimed_ref_invalid`; `source_segments[]` per covered ayah (B07); extraction/OCR truncation declared (B10); trusted-proxy `X-Forwarded-For` + image magic-byte sniffing (B12).
+- **UI wiring** (`E-054`): English, Guard, receipt and MCP shown as live and connected to the API; zero «قريبًا» badges.
+- Docs: `ARCHITECTURE.md`, `DEPLOYMENT.md`, `KNOWLEDGE.md`, `ENGINEERING_PRACTICE.md`, `MODELS.md`, `CONTRIBUTING.md`.
+
+### Fixed
+- `app.mount("/", mcp_app)` shadowed the SPA fallback — the whole site returned 404 with `BASIRA_MCP=1` (`E-051`).
+- Docker image was read-only while `/settings` needed to write one file → `/data` volume.
+- Test isolation: `static_dir=None`, `BASIRA_MODEL_CONFIG` temp path, raised fd soft limit (intermittent `ENFILE`).
+- Decision-id collisions across parallel branches (E-047/E-050) renumbered at merge.
+
+### Changed
+- Repository hygiene: all non-product material moved under `out/`; every stale branch deleted (UI v4 draft kept as tag `archive/v4-ui`); README rewritten.
+
+### Verified (on `main`, full corpus)
+pytest **304** · ruff + mypy strict · smoke OK · eval **150/150** · unsafe 0 · false alarms **0/500** · variance 0 ·
+tsc · oxlint 0 · vitest 26/26 · bundle **86.7 kB gzip** · pip-audit 0 · npm audit 0 · lexicon 656/0 · 0 console errors.
+
+## [0.2.0] — 2026-10-01 — upgrade pack
+
 
 ### Fixed — scholar-lens gaps (zero-defect audit)
 - **I10** `claimed_ayah_mismatch`: an ayah cited with a wrong surah/ayah reference («[البقرة: 5]» for 94:6) now raises a notice and `claimed_source_mismatch=true`. Previously silent for Quran.

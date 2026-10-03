@@ -1,7 +1,7 @@
 # STATE.md — Living status board (read this every session; update at session end)
 
-**Last updated:** 2026-10-01 (session 4 — WP-01..04 shipped) · **Branch:** `main` · **Last commit:** see `git log -1`
-**Repo:** PRIVATE rehearsal. On **Oct 4** a fresh repo is created and work migrated «as if new» (D-002).
+**Last updated:** 2026-10-03 (session 6 — PRs #1–#5 merged, E-044…E-054, repo cleaned: branches deleted, `out/` created, docs set rewritten) · **Branch:** `main` · **Last commit:** see `git log -1`
+**Repo:** `alabasi2025/Project-Basira`, single branch `main` (all feature branches merged and deleted 2026-10-03; UI v4 draft kept as tag `archive/v4-ui`). Non-product material lives under `out/` and is deleted before any public release.
 
 ## 0. How to resume (new agent / new account / new machine) — ONE command
 ```bash
@@ -19,17 +19,16 @@ index sha256 `3175b625…8488` reproduced a third time. Wall-clock ≈ 2 min.
 > integrity is still enforced by the pin. Use `python3 corpus/fetch.py --strict-tls` to forbid the fallback (e.g. in CI once tanzil renews).
 
 Then read in this order: `AGENTS.md` → this file → `docs/DECISIONS.md` → `docs/adr/` →
-`docs/internal/AUDIT_HANDOFF_PACKAGE.md §12.5`. The confidential source package (`.intake/`) exists ONLY on the
-original sandbox; `docs/internal/` is its complete substitute. Never publish `docs/internal/`.
+`docs/KNOWLEDGE.md`. The confidential source package (`.intake/`) exists ONLY on the original sandbox; `out/internal/` is its complete substitute and is never published.
 
 **Owner model (D-011): every day = new account + new sandbox + new agent → recovery from GitHub only.**
 **Per-session ritual:** `make gates && make smoke` at start; commit after every logical change; update this file at end.
 
 ## 0.5 Team & models (D-008/D-009)
-**New agent? Read `extra/docs/agent/README.md` then `extra/docs/AGENT_PLAYBOOK.md`.** Risk register: `docs/RISKS.md`. Multi-model team charter: `extra/docs/TEAM.md`. Experiments log: `extra/docs/experiments/`. Sub-agent runner: `extra/scripts/agents/orchestrator.py --selftest`. Evidence-based model selection: `extra/docs/model-analysis/` (README = verdict; 01–06 = axes, weaknesses, roster). Live proxy capacity: `extra/docs/CAPABILITIES.md`.
+**New agent? `AGENTS.md` is the single entry point.** Method: `docs/ENGINEERING_PRACTICE.md`. Risk register: `docs/RISKS.md`. Measured models: `docs/MODELS.md`. Historical agent material (team charter, experiments, model research, orchestrator) is archived under `out/extra/` and is not needed to work on the product.
 
 ## 0.7 Competition (read before building anything user-facing)
-**`docs/COMPETITION.md`** = public-safe master analysis (dates, deliverables, judging weights 25/20/15/15/10/10/5, rubric→features, idea-deck commitments, conflicts C1–C5, win plan). Official files + private digest: `docs/internal/competition/` (never publish). **Open: D-012 (C1 baseline transparency) — ask the owner once per session until answered.**
+**`out/COMPETITION.md`** = master analysis (not product) (dates, deliverables, judging weights 25/20/15/15/10/10/5, rubric→features, idea-deck commitments, conflicts C1–C5, win plan). Official files + private digest: `out/internal/competition/` (never publish). **Open: D-012 (C1 baseline transparency) — ask the owner once per session until answered.**
 
 ## 0.9 Branch design/claude (2026-10-03) — UI v3, see DECISIONS E-050 (renumbered from E-047 at merge; E-047 = English gate data layer). Merged to main 2026-10-03; owner review pending. Run: `pm2 start ecosystem.config.cjs` (API :8000 serves frontend/dist; UI preview :3000).
 
@@ -64,9 +63,9 @@ original sandbox; `docs/internal/` is its complete substitute. Never publish `do
 | Extractor v2 | `backend/app/extract/rules.py`, `tests/test_rules.py` | ✅ | longest-introducer-first (fixes «قال الله تعالى» swallowing «تعالى»), new introducers («قوله تعالى», «وفي الحديث»…), **trailers** («… صدق الله العظيم», «… رواه X»), optional ﷺ; 14 tests |
 | **Frontend (WP-06)** | `frontend/` React 19 + Vite 8 + TS strict (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) | ✅ scaffold+core | `api.ts` typed client · `i18n.ts` imports `messages/*.json` (single source) + UI chrome catalogue · `Check.tsx` (health gate, abort, Ctrl+Enter, copy report, image upload) · `QuoteCard` / `DiffView` (byte-exact source, `<mark>` only, no transform) / `StatusBadge` / `SourcesFooter` (from `/v1/sources`) · template palette `#12183F #6150EA #2EF2C2 #F2F4FF` · logical CSS only · `dir`/`lang` on `<html>` · **vitest 8/8** (key-set parity, byte-exact source, forbidden-lexicon sweep, envelope errors, 503 gate) · `tsc -b` clean · build 79 kB gz · dev proxy `/v1`,`/health` → :8000 · real fixtures captured from live API in `src/__fixtures__/` |
 | **Results workspace (WP-06c, E-042/043)** | `frontend/src/components/{AnnotatedText,ResultsView}.tsx` | ✅ | in-text highlights (state-coloured, isnad/claimed-source satellites, repeats), sticky panel / bottom sheet, status-chip filter; `textContent === input` invariant; Lighthouse mobile 98/100/100/100 CLS 0 · desktop 100×4 · axe 0 · vitest 13 · E2E 2 |
-| **Brand kit v1.0 + design system v2 (WP-06b)** | `frontend/src/brand/`, `frontend/public/brand/`, `public/fonts/` (Readex Pro + Amiri Quran, OFL), `index.css`, `extra/docs/BRAND_AUDIT.md`, `docs/UX_LOG.md` | ✅ | second agent's kit verified claim-by-claim and corrected (8 findings; E-032/E-033) · dark mode (pre-paint, persisted) · hero/pillars/examples · kit icons in badges/cards · **Playwright E2E 1/1 + axe WCAG 2.2 AA 0 violations on light/dark × desktop/mobile** (E-034) · build 85 kB gz |
-| **Agent packs (s5)** | `extra/docs/reviews/AGENT_PACKS_REVIEW.md`, branches `review/packA`, `review/packB` | **A ✅ + B ✅ merged** (E-039/E-041) | every claim re-measured on main; tests 129 · eval-full 150/150 · 2026 Task2 Ayah 98.71 / Task1 F1 0.6446 (official scorer) · snapshot boot 2.3 s/249 MB byte-identical |
-| Cross-family review r2 | `extra/docs/reviews/` | ⚠ 2/5 landed | security review (gpt-6-astra) + safety audit (opus-5-5) stored verbatim; 3 jobs hit HTTP 524 again even at ≤4 files → see §3 |
+| **Brand kit v1.0 + design system v2 (WP-06b)** | `frontend/src/brand/`, `frontend/public/brand/`, `public/fonts/` (Readex Pro + Amiri Quran, OFL), `index.css`, `out/extra/docs/BRAND_AUDIT.md`, `out/UX_LOG.md` | ✅ | second agent's kit verified claim-by-claim and corrected (8 findings; E-032/E-033) · dark mode (pre-paint, persisted) · hero/pillars/examples · kit icons in badges/cards · **Playwright E2E 1/1 + axe WCAG 2.2 AA 0 violations on light/dark × desktop/mobile** (E-034) · build 85 kB gz |
+| **Agent packs (s5)** | `out/extra/docs/reviews/AGENT_PACKS_REVIEW.md` (branches merged and deleted) | **A ✅ + B ✅ merged** (E-039/E-041) | every claim re-measured on main; tests 129 · eval-full 150/150 · 2026 Task2 Ayah 98.71 / Task1 F1 0.6446 (official scorer) · snapshot boot 2.3 s/249 MB byte-identical |
+| Cross-family review r2 | `out/extra/docs/reviews/` | ⚠ 2/5 landed | security review (gpt-6-astra) + safety audit (opus-5-5) stored verbatim; 3 jobs hit HTTP 524 again even at ≤4 files → see §3 |
 | **Real providers live (E-021)** | `scripts/serve.sh`, `make serve` | ✅ | OCR + LLM extraction via platform proxy (gpt-5.4); verified on 3 images; `/health.providers` shows `openai-compatible:gpt-5.4` |
 | **Image policy (E-020)** | `pipeline.py`, `main.py` (`ocr_text`), frontend OCR card | ✅ | image-sourced quotes → `needs_review/image_unconfirmed`, OCR text shown to user |
 | **Manual test pack** | `docs/manual-test/` | ✅ | 20 texts + 5 images + 8 UI checks, expectations verified live |

@@ -31,8 +31,10 @@ FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     BASIRA_INDEX_DIR=/app/corpus/index BASIRA_MANIFEST=/app/corpus/manifest.json \
     BASIRA_MESSAGES_DIR=/app/messages BASIRA_STATIC_DIR=/app/frontend/dist \
-    BASIRA_SNAPSHOT_WRITE=0 LLM_PROVIDER=mock VISION_PROVIDER=mock PORT=8000
-RUN useradd -r -u 10001 basira
+    BASIRA_SNAPSHOT_WRITE=0 LLM_PROVIDER=mock VISION_PROVIDER=mock PORT=8000 \
+    BASIRA_MCP=1 BASIRA_MODEL_CONFIG=/data/model.json
+RUN useradd -r -u 10001 basira && mkdir -p /data && chown basira:basira /data
+VOLUME ["/data"]
 WORKDIR /app
 COPY --from=py /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=py /usr/local/bin/uvicorn /usr/local/bin/uvicorn
@@ -42,6 +44,7 @@ COPY --from=web /web/dist frontend/dist
 COPY backend/app backend/app
 COPY messages messages
 COPY LICENSE SOURCES.md THIRD_PARTY_NOTICES.md AI_USAGE.md SAFETY.md ./
+# /data holds the operator's model configuration written once from /settings (E-051); the rest of the FS is read-only.
 USER basira
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

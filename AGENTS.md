@@ -1,65 +1,113 @@
-# AGENTS.md — Entry point for ANY AI engineer picking up Basira
+# AGENTS.md — start here (humans and AI engineers)
 
-> **If you are a new agent/account: read this file first, then `docs/STATE.md`, then `docs/DECISIONS.md`.**
-> After that you have the full memory of the previous engineer and can continue seamlessly.
-> Total read time ≈ 15 minutes. Do not start work before finishing the reading order.
+> You are picking up **Basira (بصيرة)** in a fresh session, probably a fresh machine. This file gives you the whole
+> memory of the project in ~15 minutes. **Do not write code before finishing §1–§4.**
 
-## Reading order (mandatory)
-1. `AGENTS.md` (this) — role, rules, map.
-1a. *(optional)* `extra/docs/agent/README.md` → `context/IDENTITY.md` → `context/OWNER.md` — agent long-term memory (moved to `extra/`, not product material).
-1b. *(optional)* `extra/docs/AGENT_PLAYBOOK.md` — self-discovery of sandbox capabilities + sub-agent orchestrator (moved to `extra/`).
-2. `docs/STATE.md` — **where we are right now**: done / in progress / next. Updated at the end of every session.
-3. `docs/DECISIONS.md` — every owner decision and every engineering decision, dated, with reason. Never re-ask a decided question.
-4. `docs/GLOSSARY.md` — project terms (AR/EN) so you speak the same language as the owner.
-5. `docs/internal/AUDIT_HANDOFF_PACKAGE.md` — the full audit of the source package (what the product is, verified facts, all P0 fixes). §12.5 is the blocking list.
-6. `docs/adr/` — architecture decision records (stack, matching, states, storage).
-7. *(optional)* `extra/docs/ENVIRONMENT_ANALYSIS.md` — sandbox capabilities baseline (moved to `extra/`).
-8. Then the code: `backend/`, `frontend/`, `eval/`, `corpus/` — each has its own `README.md`.
+## 0. One command to be productive
 
-## Who you are
-The **sole AI development engineer** for **Project Basira (بصيرة)** — a Track-4 entry in the *AI in Service of Islamic Content Challenge* (Bathel Foundation, Riyadh). You report to the **owner** (`MoTechSys`, the registered solo participant). You implement, verify, commit, merge to `main`, and verify again. There is no PR review cycle; you are responsible end-to-end.
-
-## What Basira is (one paragraph)
-A bilingual web tool: paste a post or upload its image → extract every Quran/Hadith citation → deterministically match against a licensed local corpus (Tanzil Hafs Quran; Open-Hadith-Data 9 books; HadeethEnc) → show one of **four states**: `found` / `partial_match` / `needs_review` / `not_found`, with the verbatim source text and a word-level diff. It **never** grades a hadith, never says «محرّف», never issues a fatwa, never generates religious text. Any grade shown is HadeethEnc's own, verbatim, attributed, only on a direct match.
-
-## Non-negotiable rules (the three red lines + engineering)
-1. **Religious text is never generated** by a model; it is displayed from the corpus by ID, byte-exact.
-2. **No judgment**: no «صحيح/ضعيف/موضوع/محرّف/مكذوب/لا أصل له» produced by us; «لم يوجد في مصادرنا» is not a judgment; any ayah difference = «يحتاج مراجعة».
-3. **Confidentiality**: `.intake/` (the source package incl. organizer's non-public annex) is git-ignored and never leaves this machine; `docs/internal/` is never published. Templates in `messages/` are **rewritten**, never copied from the package.
-4. Every change: implement → lint/typecheck/test → commit (Conventional Commits) → merge to `main` → verify. Update `docs/STATE.md` at session end.
-5. Owner's intent on attribution: the project is the **owner's** work; AI agents (including you) are **tools under the owner's direction** and are disclosed as tools in `AI_USAGE.md` (required by the challenge terms §9). Never phrase anything as "the AI built this instead of the participant".
-
-## Repository map
+```bash
+git clone https://github.com/alabasi2025/Project-Basira.git && cd Project-Basira
+bash scripts/bootstrap.sh && make gates && make smoke     # ≈ 3 min → must end with SMOKE OK
+make serve-mcp                                            # http://localhost:8000  (API + UI + MCP)
 ```
-AGENTS.md / CLAUDE.md      agent entry + operating rules
-README.md                  public-facing overview (will be rewritten for delivery)
-docs/STATE.md              living status board (read every session)
-docs/DECISIONS.md          decision log
-docs/GLOSSARY.md           terminology
-docs/COMPETITION.md        what is judged, when, how (public digest of the official guide)
-docs/INTEGRATIONS.md       MCP / API / embed design
-docs/RISKS.md              living risk register
-docs/UX_LOG.md             measured UX / a11y log
-docs/adr/                  architecture decision records
-docs/manual-test/          live-verified manual test images (T-series)
-docs/internal/             audits & annex triage — NEVER PUBLISH
-backend/                   FastAPI service (Python 3.13)
-frontend/                  React + Vite + TS (AR/EN, RTL)
-corpus/                    manifest.json, fetch + index build scripts (data/ and index/ git-ignored)
-eval/                      cases.yaml, false-alarm generator, metrics, reports, IslamicEval runners
-messages/                  ar.json / en.json — the ONLY user-facing prose
-scripts/                   bootstrap.sh / serve.sh / smoke.py
-ci/                        GitHub Actions workflow (copy to .github/workflows/ at delivery)
-extra/                     NOT PART OF THE PRODUCT — agent memory, environment probes, model
-                           research, external agent packs, review artefacts (see extra/README.md)
-.intake/                   source package (git-ignored, confidential)
+If `bootstrap` fails on tanzil.net TLS, that is upstream; `fetch.py` retries once with a loud warning and the sha256
+pin still protects integrity (E-013).
+
+## 1. Who you are, who the owner is
+
+* **Owner**: the registered solo participant (`alabasi2025`). Decides product, policy, wording, design.
+  Works through several AI agents in parallel and verifies with numbers. Speaks Arabic; code and paths in English.
+* **You**: an engineering agent. You implement → verify by running → commit → merge to `main` → verify on `main`.
+  The owner does not review PRs (D-001). Other agents may open PRs; **you re-run every claim before merging**
+  (`docs/KNOWLEDGE.md` D3).
+* **Attribution**: this is the owner's work; agents are disclosed as tools in `AI_USAGE.md` (D-006).
+
+## 2. What Basira is, in one paragraph
+
+Paste a text, an image, an English quotation, or a chatbot answer → Basira finds every passage *presented as*
+Quran or Hadith → matches byte-exactly against licensed corpora (Tanzil ×3, Open-Hadith-Data 9 books, HadeethEnc,
+QuranEnc/HadeethEnc translations) → returns one of **four states** (`found` / `partial_match` / `needs_review` /
+`not_found`) with the verbatim source and a letter-level diff including vowel marks. A model may *propose where
+quotes are* or *read an image*; it can never change a verdict or produce text the user sees. Every response carries a
+`determinism_hash`; the same input on the same corpus build gives the same hash. Nothing is stored.
+
+## 3. The rules you cannot break
+
+1. **No generated religious text.** Display from the corpus by record id only.
+2. **No judgment vocabulary.** Never صحيح / ضعيف / موضوع / محرّف / مكذوب / fatwa — `scripts/check_site_lexicon.py`
+   and `messages.scan_forbidden` are gates, and they have caught *our own* copy (KNOWLEDGE B1). «لم يوجد في مصادرنا»
+   is not a judgment.
+3. **No storage.** No DB, no logs of user text, no per-request keys. The operator's model key is entered once on
+   `/settings` and lives in one server file (E-051).
+4. **`state.py` thresholds and V1–V5 semantics change only with an ADR** (`docs/adr/`).
+5. **Every string the user sees comes from `messages/*.json` or `frontend/src/site/strings.ts`.** AR and EN key
+   sets are identical (tested).
+6. **Measured, never claimed.** Any number in docs/UI cites the command or file that produced it.
+7. **Confidentiality**: `out/internal/` and anything derived from the organizer's non-public material never ships.
+   `out/` is deleted before a public release.
+
+## 4. Reading order (mandatory, ~15 min)
+
+| # | File | Why |
+|---|---|---|
+| 1 | this file | role, rules, map |
+| 2 | `docs/STATE.md` | where we are: every work package with its merge SHA and measured numbers |
+| 3 | `docs/DECISIONS.md` | D-001…D-014 owner decisions, E-001…E-054 engineering decisions, dated, with reasons. **Never re-ask a decided question.** |
+| 4 | `docs/KNOWLEDGE.md` | what broke and why — domain (Arabic/Quran encodings), safety wording, engineering, process |
+| 5 | `SAFETY.md` | invariants I1–I17, validator V1–V6, red lines |
+| 6 | `docs/ARCHITECTURE.md` | the pipeline, the developer gate, data, security posture |
+| 7 | `docs/API.md` · `docs/INTEGRATIONS.md` · `docs/GUARD.md` · `docs/MODELS.md` | contracts and measured model data |
+| 8 | `docs/adr/` | the five architecture decision records |
+| 9 | `docs/ENGINEERING_PRACTICE.md` | how this project is run: context, prompts, parallel agents, verification |
+| then | code: `backend/app/`, `frontend/src/`, `eval/`, `corpus/` | each module's docstring states *why* it exists |
+
+## 5. Repository map
+
+```
+backend/app/
+  main.py          FastAPI app, routes, security headers, rate limit, SPA, MCP mount, model config
+  pipeline.py      the deterministic pipeline (extract → gates → retrieve → match → state → english → validate → hash)
+  extract/         rules, corpus anchors, segments (isnad/matn/claimed source), foreign-material gate
+  match/           exact windows, harakat comparison, diffs
+  retrieve/        n-gram index, BM25 translations index
+  verify.py        post-validator V1–V6 + attribution-only
+  state.py         four-state machine (ADR-003) — do not touch without an ADR
+  devgate.py / guard.py / guard_messages.py / mcp_server.py   REST+MCP core, Guard, MCP (6 tools)
+  byok.py          server-side model configuration + measured catalog
+  english_gate.py  English quotations → approved translations
+  snapshot.py / store.py / normalize.py / schemas.py / messages.py
+frontend/src/      React 19 + Vite + TS; site/ (pages, strings, router), components/, Check.tsx, api.ts
+corpus/            manifest.json (sha256 pins), fetch.py, build_index.py, build_fixture.py   (data/, index/ ignored)
+eval/              cases.yaml (150), false_alarm.py, run_eval.py, english eval, IslamicEval runners, REPORT.md
+messages/          ar.json · en.json — single source of prose
+scripts/           bootstrap.sh · smoke.py · mcp_demo.py · bench_models.py · check_site_lexicon.py · gen_*.py
+docs/              STATE · DECISIONS · KNOWLEDGE · ARCHITECTURE · DEPLOYMENT · API · INTEGRATIONS · GUARD · MODELS · RISKS · GLOSSARY · adr/ · manual-test/
+ci/                GitHub Actions workflow (move to .github/workflows/ — needs the `workflows` token scope)
+out/               NOT the product: hand-offs, competition material, old notes. Delete before public release.
 ```
 
-## First command in any new environment
-`bash scripts/bootstrap.sh && make smoke` — must end with `BOOTSTRAP OK` and `SMOKE OK` before any work.
+## 6. Per-session ritual
 
-## Working conventions
-- Bash always `cd /home/user/webapp && …`.
-- Python: `backend/.venv`; run tests with `pytest`. Node: `frontend/`; `npm run lint && npm run typecheck && npm test`.
-- Keys/secrets only in env vars; `.env.example` committed with empty values.
-- Every number shown anywhere must have `n` and a confidence interval, or be labelled «قيمة مبدئية».
+1. `make gates && make smoke` — green before anything else.
+2. Read `docs/STATE.md` §"Open" and pick from there; if the owner gives new work, log the decision first.
+3. Commit after every logical change (Conventional Commits); the sandbox is ephemeral — GitHub is the only
+   persistence (D-011).
+4. Before merging anything (yours or another agent's): `make lint && make test && make smoke && make eval-full &&
+   git checkout eval/REPORT.md`, frontend `tsc && oxlint && vitest && build`, lexicon gate, and a **live** check in
+   a browser or with `curl` for anything user-visible. Put the measured numbers in the merge message.
+5. End of session: update `docs/STATE.md` (row per work package, with SHA and numbers), add `E-nnn` rows to
+   `docs/DECISIONS.md`, add lessons to `docs/KNOWLEDGE.md`, push.
+
+## 7. Working with the owner
+
+* Answer in Arabic, keep code/paths in English. Be direct; the owner rejects vagueness and hidden scope.
+* Show real output (terminal lines, screenshots), not descriptions of output.
+* When the owner says "فقط X", build exactly X. When the owner rejects a design, do not iterate on it — ask or hand off.
+* Owner decisions pending as of 2026-10-03 are listed at the end of `docs/KNOWLEDGE.md` §E.
+
+## 8. Working with other agents
+
+The owner runs several agents in parallel (design, backend features, audits). Protocol that worked:
+hand them a prompt with (a) what to read first, (b) the exact deliverable, (c) the gates with expected numbers,
+(d) what they must not touch, (e) "open a PR, do not merge". You verify and merge. Templates and the full method:
+`docs/ENGINEERING_PRACTICE.md`.
