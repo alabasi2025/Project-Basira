@@ -42,7 +42,11 @@
     "attribution_hadith_not_quran": "This text is a hadith from {source_name}; your text attributes it to the Quran.",
     "qiraah_note": "Your text matches another orthography of the word; the Hafs orthography used by our sources is shown beside it. The difference may be another canonical reading; consult a certified mushaf.",
     "basmala_note": "The basmala is an ayah in Al-Fatihah and part of an ayah in An-Naml.",
-    "repeated_in_text": "This quote appears more than once in your text; its result is shown once."
+    "repeated_in_text": "This quote appears more than once in your text; its result is shown once.",
+    "harakat_incomplete": "Your text is partially vocalised; the highlighted letters in the source carry marks that are not written in yours. A missing mark is not a difference, but we show it so the comparison is complete.",
+    "waqf_note": "The last word of your text ends with a sukun (pausal form) where the Mushaf writes the connecting vowel. This is a spelling convention, not a transmission difference.",
+    "diacritic_unverified": "We could not compare the vowel marks letter by letter at this position (the rasm differs in letter count); the letters match, the marks were not machine-verified.",
+    "foreign_material": "The quote contains words, digits or symbols that are not part of the text (highlighted in your text). Remove them and check again."
   },
   "labels": {
     "found": "Found",
@@ -62,7 +66,10 @@
     "search_quranpedia": "Search Quranpedia",
     "open_source": "Source",
     "report_issue": "Report an error",
-    "diff_diacritic_conflict": "diacritic difference"
+    "diff_diacritic_conflict": "diacritic difference",
+    "diff_diacritic_missing": "missing marks",
+    "diff_waqf": "pausal sukun",
+    "diff_foreign_material": "foreign material"
   },
   "fixed": {
     "footer": "Basira is an automated aid for checking how verses and hadiths are quoted. It does not evaluate hadiths or issue religious rulings, and does not replace review by qualified scholars.",

@@ -27,6 +27,7 @@ from typing import Any
 
 from app.config import Settings
 from app.extract.anchor import detect
+from app.extract.foreign import foreign_runs
 from app.extract.rules import (
     RuleSpan,
     asserted_kind,
@@ -42,7 +43,7 @@ from app.extract.segments import segment, tagged_spans, tighten
 from app.links import hadeethenc_url, hadith_search_links, ohd_url, quran_search_links, quran_url
 from app.match.diff import DiffOp, diff_kinds, letter_diff, word_diff
 from app.match.exact import ExactHit, dedupe_hits, find_exact, mixed_rasm_hit, records_covering
-from app.match.harakat import user_vocalised, word_conflicts
+from app.match.harakat import LetterDiff, compare_words, skeleton, user_vocalised
 from app.match.window import WindowHit, fuzzy_search, fuzzy_search_surah_stream
 from app.messages import Messages, load_messages
 from app.normalize import tokenize
@@ -176,14 +177,16 @@ class Pipeline:
         quotes: list[QuoteResult] = []
         t_retr = 0.0
         t_match = 0.0
-        seen_loose: dict[tuple[str, ...], int] = {}  # N-1: identical quote repeated in the same text
+        # N-1 / B03: a quote repeated in the same text is merged ONLY when its characters are identical
+        # (letters, hamza forms, diacritics, foreign material). Any difference → its own verdict.
+        seen_raw: dict[str, int] = {}
         for i, sp in enumerate(spans):
             q = self._prepare(text, sp)
             if q is None:
                 continue
-            key = tuple(t.loose for t in q.tokens)
-            if key in seen_loose:
-                prev = quotes[seen_loose[key]]
+            key = q.text
+            if key in seen_raw:
+                prev = quotes[seen_raw[key]]
                 prev.repeated_spans.append(Span(start=sp.start, end=sp.end))
                 if "repeated_in_text" not in prev.notice_keys:
                     prev.notice_keys.append("repeated_in_text")
@@ -193,11 +196,12 @@ class Pipeline:
             t_retr += t_retr_i
             facts = self._facts(q, req.source_modality, text, evidence)
             d = decide(facts, evidence, self.th)
-            d = self._diacritic_gate(q, d, carriers)
+            d = self._foreign_gate(q, d)
+            d = self._harakat_gate(q, d, carriers)
             self._quran_context_notices(d, q, carriers, rasm0_only)
             qr = self._render(i, q, d, carriers, req, extra_notices or [])
             t_match += (time.perf_counter() - tr0) - t_retr_i
-            seen_loose[key] = len(quotes)
+            seen_raw[key] = len(quotes)
             quotes.append(qr)
         timings.retrieve = int(t_retr * 1000)
         timings.match = int(t_match * 1000)
@@ -522,33 +526,84 @@ class Pipeline:
             external_search_links=ext,
         )
 
-    def _diacritic_gate(self, q: _Quote, d: Decision, carriers: dict[int, ExactHit | WindowHit]) -> Decision:
-        """I11 — a `found` whose user-written diacritics contradict EVERY matching source position is
-        downgraded to `needs_review/diacritic_difference`. Missing diacritics never count."""
-        if d.status != "found" or d.corpus_scope != "quran" or not user_vocalised(q.text):
+    def _foreign_gate(self, q: _Quote, d: Decision) -> Decision:
+        """B02 — Latin letters / digits / other scripts *between* the quote's words were invisible to
+        the token comparison. A quote carrying such material is never `found`; the runs are kept in
+        ``d.extra["foreign"]`` so the diff can highlight them inside the user's text."""
+        if d.status != "found":
             return d
-        keep: list[Evidence] = []
-        conflicted: list[Evidence] = []
-        for ev in d.winners:
-            if self._letter_conflicts(q, ev, carriers.get(ev.rec_idx)):
-                conflicted.append(ev)
-            else:
-                keep.append(ev)
-        if keep:
-            d.winners = keep  # at least one position agrees with the user's vocalisation
+        runs = foreign_runs(q.text, q.tokens)
+        if not runs:
             return d
-        reason = "diacritic_difference"
         key = "needs_review_quran" if d.corpus_scope == "quran" else "needs_review"
         nd = Decision(
             "needs_review",
             1.0,
             key,
             d.corpus_scope,
-            winners=conflicted,
-            review_reason=reason,
-            notice_keys=[*d.notice_keys, "diacritic_difference"],
+            winners=list(d.winners),
+            review_reason="foreign_material",
+            notice_keys=[*d.notice_keys, "foreign_material"],
+            attach_grade=False,
         )
-        nd.extra["diacritic"] = True
+        nd.extra["foreign"] = runs
+        return nd
+
+    def _harakat_gate(self, q: _Quote, d: Decision, carriers: dict[int, ExactHit | WindowHit]) -> Decision:
+        """I11 / B01 — vocalisation check of a Quran `found` (policy in ``match/harakat``).
+
+        * any *conflict* at every matching position → `needs_review/diacritic_difference`;
+        * otherwise *missing* marks → stays `found` + ``harakat_incomplete`` notice;
+        * a pausal sukun on the quote's last letter → stays `found` + ``waqf_note``;
+        * a position whose words cannot be aligned letter-for-letter is treated as unverifiable:
+          it is dropped from the winners when another position verified, else the quote is
+          `needs_review/diacritic_unverified` (never a silent `found`).
+        """
+        if d.status != "found" or d.corpus_scope != "quran" or not user_vocalised(q.text):
+            return d
+        verified: list[Evidence] = []
+        conflicted: list[Evidence] = []
+        unverifiable: list[Evidence] = []
+        kinds_by_ev: dict[int, set[str]] = {}  # letter-diff kinds per winner
+        for ev in d.winners:
+            diffs = self._harakat_diffs(q, ev, carriers.get(ev.rec_idx))
+            if diffs is None:
+                unverifiable.append(ev)
+                continue
+            kinds: set[str] = {dd.kind for _, dd in diffs}
+            kinds_by_ev[ev.rec_idx] = kinds
+            (conflicted if "conflict" in kinds else verified).append(ev)
+        if verified:
+            d.winners = verified
+            kinds_all = set().union(*(kinds_by_ev[e.rec_idx] for e in verified))
+            if "missing" in kinds_all:
+                d.notice_keys.append("harakat_incomplete")
+                d.extra["harakat"] = True
+            if "waqf" in kinds_all:
+                d.notice_keys.append("waqf_note")
+                d.extra["harakat"] = True
+            return d
+        if conflicted:
+            nd = Decision(
+                "needs_review",
+                1.0,
+                "needs_review_quran",
+                "quran",
+                winners=conflicted,
+                review_reason="diacritic_difference",
+                notice_keys=[*d.notice_keys, "diacritic_difference"],
+            )
+            nd.extra["harakat"] = True
+            return nd
+        nd = Decision(
+            "needs_review",
+            1.0,
+            "needs_review_quran",
+            "quran",
+            winners=unverifiable,
+            review_reason="diacritic_unverified",
+            notice_keys=[*d.notice_keys, "diacritic_unverified"],
+        )
         return nd
 
     def _source_words(
@@ -592,35 +647,92 @@ class Pipeline:
         hits = [i for i in range(len(disp) - n + 1) if disp[i : i + n] == want]
         return spans[hits[0] : hits[0] + n] if len(hits) == 1 else None
 
-    def _letter_conflicts(
+    def _reference_words(
         self, q: _Quote, ev: Evidence, carrier: ExactHit | WindowHit | None
-    ) -> list[tuple[int, tuple[int, int], tuple[int, int]]]:
-        """(token index, quote char range, source char range) for every conflicting letter."""
+    ) -> tuple[Record, str, list[tuple[int, int]], list[tuple[int, int]]] | None:
+        """(record, reference text, per-token spans into it, per-token spans into rec.display).
+
+        The reference is the fully vocalised Tanzil *simple* text (letters identical to what users
+        type) when both rasms of the ayah are word-aligned; otherwise the Uthmani display text."""
         got = self._source_words(q, ev, carrier)
         if got is None:
-            return []
-        rec, spans = got
-        out: list[tuple[int, tuple[int, int], tuple[int, int]]] = []
-        for k, (tok, (a, b)) in enumerate(zip(q.tokens, spans, strict=True)):
-            if a < 0:
-                continue
-            # extend each word to include its trailing marks
-            ue = tok.end
-            while ue < len(q.text) and not q.text[ue].isspace() and not ("\u0621" <= q.text[ue] <= "\u064a"):
-                ue += 1
-            se = b
-            disp = rec.display
-            while se < len(disp) and not disp[se].isspace() and not ("\u0621" <= disp[se] <= "\u064a"):
-                se += 1
-            for c in word_conflicts(q.text[tok.start : ue], disp[a:se]):
+            return None
+        rec, disp = got
+        if rec.text_vocalized:
+            vtoks = tokenize(rec.text_vocalized)
+            all_disp = self.store.spans_of(rec)
+            if rec.g2_len == rec.g_len and len(vtoks) == len(all_disp):
+                idx = {sp: k for k, sp in enumerate(all_disp)}
+                if all(sp in idx for sp in disp):
+                    vsp = [(vtoks[idx[sp]].start, vtoks[idx[sp]].end) for sp in disp]
+                    return rec, rec.text_vocalized, vsp, disp
+            # rasms not word-aligned (363 ayat): locate the quote's strict word run in the vocalised text
+            want = [t.strict for t in q.tokens]
+            vs = [t.strict for t in vtoks]
+            n = len(want)
+            hits = [i for i in range(len(vs) - n + 1) if vs[i : i + n] == want]
+            if len(hits) == 1:
+                vsp = [(vtoks[hits[0] + k].start, vtoks[hits[0] + k].end) for k in range(n)]
+                return rec, rec.text_vocalized, vsp, disp
+        return rec, rec.display, disp, disp
+
+    def _harakat_diffs(
+        self, q: _Quote, ev: Evidence, carrier: ExactHit | WindowHit | None
+    ) -> list[tuple[int, LetterDiff]] | None:
+        """(token index, letter diff) with quote ranges into ``q.text`` and source ranges into
+        ``rec.display`` (the text the UI shows). None when any word cannot be aligned letter-for-letter."""
+        ref = self._reference_words(q, ev, carrier)
+        if ref is None:
+            return None
+        rec, ref_text, rspans, dspans = ref
+        out: list[tuple[int, LetterDiff]] = []
+        n = len(q.tokens)
+        for k, (tok, (a, b), (da, db)) in enumerate(zip(q.tokens, rspans, dspans, strict=True)):
+            if a < 0 or da < 0:
+                return None
+            ue = self._word_end(q.text, tok.end)
+            user_word = q.text[tok.start : ue]
+            final = k == n - 1
+            # reference word (vocalised simple), then the Uthmani display word as fallback — the user's
+            # spelling may align with only one of them («مَلِكِ» vs «مَالِكِ»/«مَٰلِكِ», qiraah spelling)
+            ref_word = ref_text[a : self._word_end(ref_text, b)]
+            disp_word = rec.display[da : self._word_end(rec.display, db)]
+            diffs = compare_words(user_word, ref_word, quote_final=final)
+            used = ref_word
+            if diffs is None and ref_word != disp_word:
+                diffs = compare_words(user_word, disp_word, quote_final=final)
+                used = disp_word
+            if diffs is None:
+                return None
+            # map the compared letter → the same letter of the display word when counts agree,
+            # else highlight the whole display word
+            used_sk = skeleton(used)
+            disp_sk = skeleton(disp_word)
+            same = len(used_sk) == len(disp_sk)
+            for dd in diffs:
+                if same:
+                    li = next((i for i, m in enumerate(used_sk) if m.pos == dd.source_chars[0]), -1)
+                    src = (
+                        (da + disp_sk[li].pos, da + disp_sk[li].end) if li >= 0 else (da, da + len(disp_word))
+                    )
+                else:
+                    src = (da, da + len(disp_word))
                 out.append(
                     (
                         k,
-                        (tok.start + c.quote_chars[0], tok.start + c.quote_chars[1]),
-                        (a + c.source_chars[0], a + c.source_chars[1]),
+                        LetterDiff(
+                            dd.kind, (tok.start + dd.quote_chars[0], tok.start + dd.quote_chars[1]), src
+                        ),
                     )
                 )
         return out
+
+    @staticmethod
+    def _word_end(text: str, end: int) -> int:
+        """Extend a token end past its trailing combining marks (never past a space or a letter)."""
+        while end < len(text) and not text[end].isspace() and not ("\u0621" <= text[end] <= "\u064a"):
+            end += 1
+        return end
 
     def _is_fragment(self, q: _Quote, carriers: dict[int, ExactHit | WindowHit], d: Decision) -> bool:
         """True when the exact Quran hit does not start at an ayah head or end at an ayah tail."""
@@ -744,7 +856,7 @@ class Pipeline:
             continues_to=continues_to,
         )
 
-    def _diff_ops(
+    def _diff_ops(  # noqa: PLR0912 — one branch per diff family (harakat / foreign / word), flat on purpose
         self,
         q: _Quote,
         d: Decision,
@@ -755,24 +867,33 @@ class Pipeline:
         win_spans: list[tuple[int, int]],
         win_alt: list[str] | None,
     ) -> tuple[list[DiffOp], list[str], dict[int, tuple[list[list[int]], list[list[int]]]]]:
-        """Word diff + letter-level (char-by-char) sub-ranges; diacritic conflicts get their own ops."""
+        """Word diff + letter-level (char-by-char) sub-ranges; harakat diffs and foreign runs get their own ops."""
         q_strict = [t.strict for t in q.tokens]
         q_spans = [(t.start, t.end) for t in q.tokens]
         ops: list[DiffOp] = []
         kinds: list[str] = []
         letters: dict[int, tuple[list[list[int]], list[list[int]]]] = {}
-        if d.review_reason == "diacritic_difference":
-            conf = self._letter_conflicts(q, ev, carrier)
+        if d.extra.get("harakat"):
+            diffs = self._harakat_diffs(q, ev, carrier) or []
             by_tok: dict[int, tuple[list[list[int]], list[list[int]]]] = {}
-            for k, qc, sc in conf:
+            conflict_toks: set[int] = set()
+            kset: set[str] = set()
+            for k, dd in diffs:
                 by_tok.setdefault(k, ([], []))
-                by_tok[k][0].append(list(qc))
-                by_tok[k][1].append(list(sc))
+                by_tok[k][0].append(list(dd.quote_chars))
+                by_tok[k][1].append(list(dd.source_chars))
+                kset.add(
+                    {"conflict": "diacritic_conflict", "missing": "diacritic_missing", "waqf": "waqf"}[
+                        dd.kind
+                    ]
+                )
+                if dd.kind == "conflict":
+                    conflict_toks.add(k)
             for k, tok in enumerate(q.tokens):
                 sp = win_spans[k] if k < len(win_spans) else (-1, -1)
                 ops.append(
                     DiffOp(
-                        op="replace" if k in by_tok else "equal",
+                        op="replace" if k in conflict_toks else "equal",
                         quote_range=[k, k + 1],
                         source_range=[k, k + 1],
                         quote_chars=[tok.start, tok.end],
@@ -781,7 +902,31 @@ class Pipeline:
                 )
                 if k in by_tok:
                     letters[len(ops) - 1] = by_tok[k]
-            kinds = ["diacritic_conflict"]
+            kinds = sorted(kset)
+        elif d.review_reason == "foreign_material":
+            for k, tok in enumerate(q.tokens):
+                sp = win_spans[k] if k < len(win_spans) else (-1, -1)
+                ops.append(
+                    DiffOp(
+                        op="equal",
+                        quote_range=[k, k + 1],
+                        source_range=[k, k + 1],
+                        quote_chars=[tok.start, tok.end],
+                        source_chars=[sp[0], sp[1]],
+                    )
+                )
+            for a, b in d.extra.get("foreign", []):
+                ops.append(
+                    DiffOp(
+                        op="delete",
+                        quote_range=[-1, -1],
+                        source_range=[-1, -1],
+                        quote_chars=[a, b],
+                        source_chars=[-1, -1],
+                    )
+                )
+            ops.sort(key=lambda o: o["quote_chars"][0])
+            kinds = ["foreign_material"]
         elif d.status != "found" or not ev.strict_ok:
             ops = word_diff(q_strict, q_spans, win_strict, win_spans, win_alt)
             kinds = diff_kinds(ops)

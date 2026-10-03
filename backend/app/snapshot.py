@@ -36,7 +36,9 @@ from app.store import Store, load_store
 
 log = logging.getLogger(__name__)
 
-SNAPSHOT_VERSION = 3  # v3: + GS2/G2 twin-rasm streams (E-024)
+SNAPSHOT_VERSION = (
+    4  # v4: Record.text_vocalized (B01 harakat reference); v3: GS2/G2 twin-rasm streams (E-024)
+)
 _STORE_ARRAYS = (
     "G",
     "GS",

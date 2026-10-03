@@ -32,6 +32,9 @@ original sandbox; `docs/internal/` is its complete substitute. Never publish `do
 **`docs/COMPETITION.md`** = public-safe master analysis (dates, deliverables, judging weights 25/20/15/15/10/10/5, rubric→features, idea-deck commitments, conflicts C1–C5, win plan). Official files + private digest: `docs/internal/competition/` (never publish). **Open: D-012 (C1 baseline transparency) — ask the owner once per session until answered.**
 
 ## 1. Done (verified, committed)
+
+| **Safety gates B01/B02/B03 closed (2026-10-03)** | `match/harakat.py` (rewritten: `compare_words` conflict/missing/waqf), `extract/foreign.py`, `pipeline._foreign_gate/_harakat_gate`, `tests/test_safety_gates.py` (15, written failing first), `corpus/manifest.json` `tanzil_simple`, `Record.text_vocalized`, snapshot v4, messages `harakat_incomplete/waqf_note/diacritic_unverified/foreign_material` | ✅ D-013/D-014, E-044..E-046 | Live on full index: «قل هو HELLO الله أحد» → needs_review/foreign_material · 35:28 «اللهُ» → needs_review/diacritic_difference · 39:53 half-vocalised → found + harakat_incomplete · «أَحَدْ» → found + waqf_note · dup with hamza error → 2 verdicts. Gates: pytest **179/179** · SMOKE OK · eval-full **150/150 · unsafe 0 · FA 0/500 · variance 0** · tsc/vitest 13/13/build OK. |
+
 | Layer | File(s) | Status | Evidence |
 |---|---|---|---|
 | Docs scaffold | AGENTS.md, DECISIONS.md, GLOSSARY.md, ADR-001..005 | ✅ | — |

@@ -2,8 +2,8 @@
 
 * I10 — the not-found wording follows what the text CLAIMS to be (a hadith is never told
   «not found among the ayat of the Mushaf»); unknown kinds get a neutral both-corpora message.
-* I11 — a diacritic the user wrote that contradicts the Mushaf is a difference; missing
-  diacritics are not; word-final sukun vs vowel (waqf/wasl) is not; hadith vocalisation is
+* I11 — a diacritic the user wrote that contradicts the Mushaf is a difference (any letter, B01); missing
+  diacritics are not; a pausal sukun on the LAST letter of the quote is not; hadith vocalisation is
   never gated (editorial, not canonical).
 * letter-level (char-by-char) highlighting inside replaced words never splits a letter from
   its marks.
@@ -28,7 +28,7 @@ from app.schemas import CheckRequest, CheckResponse
     ("user", "source", "n_conflicts"),
     [
         ("حُرِّمَ", "حَرَّمَ", 2),  # passive vs active: ح and ر vowels differ
-        ("الْمَيْتَةُ", "ٱلْمَيْتَةَ", 0),  # final letter (case ending) is never judged
+        ("الْمَيْتَةُ", "ٱلْمَيْتَةَ", 1),  # B01 (owner 2026-10-03): a written final vowel IS judged
         ("حرم", "حَرَّمَ", 0),  # no diacritics written → never a conflict
         ("اللَّهَ", "ٱللَّهَ", 0),  # identical vocalisation, wasla ignored
         ("شِيْءٍ", "شَىْءٍ", 1),  # kasra on ش where the Mushaf has fatha

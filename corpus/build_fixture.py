@@ -4,7 +4,7 @@
 Reads ``corpus/index/records.jsonl`` (full build) and writes ``corpus/fixture/records.jsonl`` +
 ``meta.json`` + ``surah_names.json`` with:
 
-  * Quran: surahs 1, 2 (first 160 ayat), 8 (ayah 40–50), 55, 112, 113, 114  → both rasms, basmala offsets intact
+  * Quran: surahs 1, 2 (first 160 ayat), 8 (ayah 40–50), 35:28, 39:53, 55, 112, 113, 114  → both rasms, basmala offsets intact
   * OHD:   the first N hadith of each of the nine books (N=12) + a few canonical records
            (Bukhari 1 «إنما الأعمال», Ibn Maja 220 «طلب العلم», Ibn Maja 2216 «من غشنا»)
   * HadeethEnc: the first 30 records + ids 4560 and 66511 («إنما الأعمال بالنيات», two wordings)
@@ -31,6 +31,8 @@ QURAN_KEEP: dict[int, tuple[int, int] | None] = {
     1: None,
     2: (1, 160),
     8: (40, 50),
+    35: (28, 28),  # B01 — «إنما يخشى اللهَ من عباده العلماءُ» (final-vowel policy)
+    39: (53, 53),  # B01 — «إن الله يغفر الذنوب جميعا» (partial vocalisation)
     55: None,
     112: None,
     113: None,

@@ -50,6 +50,7 @@ class Record:
     surah: int = 0
     ayah: int = 0
     text_simple: str = ""
+    text_vocalized: str = ""  # Tanzil simple (vocalised) — harakat reference only, never displayed (B01)
     g2_start: int = -1  # simple-rasm variant tokens (no spans)
     g2_len: int = 0
     # OHD
@@ -291,6 +292,7 @@ def load_store(index_dir: Path) -> Store:
                 surah=int(d["s"]),
                 ayah=int(d["a"]),
                 text_simple=d["ts"],
+                text_vocalized=str(d.get("tv", "")),
                 g2_start=g2_start,
                 g2_len=g2_len,
             )

@@ -14,6 +14,7 @@ RECORD FORMAT (compact; tokens are pre-computed so the server starts fast):
               "P": [start,end, start,end, ...]  # spans into the display text, one pair per token
               "o": index_offset}               # tokens before this offset are NOT indexed (basmala)
     tanzil:  {"c":"tanzil","s":surah,"a":ayah,"tu":uthmani_verbatim,"ts":simple_verbatim,
+              "tv": simple_vocalised_verbatim (Tanzil "simple", harakat reference only — B01/E-037),
               "L2","S2": tokens of the simple rasm (second index variant, no spans)}
     ohd:     {"c":"ohd","b":book_key,"n":num,"td":display_text (mushakkala, U+200F removed),
               "tp":plain_text_verbatim,"m":matn_start_token_index}
@@ -101,11 +102,14 @@ def read_tanzil(path: Path) -> dict[tuple[int, int], str]:
     return out
 
 
-def build_tanzil(src_uth: dict[str, Any], src_sim: dict[str, Any]) -> list[dict[str, Any]]:
+def build_tanzil(
+    src_uth: dict[str, Any], src_sim: dict[str, Any], src_voc: dict[str, Any]
+) -> list[dict[str, Any]]:
     uth = read_tanzil(DATA / src_uth["filename"])
     sim = read_tanzil(DATA / src_sim["filename"])
-    if uth.keys() != sim.keys():
-        raise SystemExit("tanzil: uthmani/simple key sets differ")
+    voc = read_tanzil(DATA / src_voc["filename"])
+    if not (uth.keys() == sim.keys() == voc.keys()):
+        raise SystemExit("tanzil: uthmani/simple/vocalised key sets differ")
     records: list[dict[str, Any]] = []
     for (s, a), text_u in sorted(uth.items()):
         text_s = sim[(s, a)]
@@ -118,7 +122,12 @@ def build_tanzil(src_uth: dict[str, Any], src_sim: dict[str, Any]) -> list[dict[
             if head_u != BASMALA_LOOSE or head_s != BASMALA_LOOSE:
                 raise SystemExit(f"tanzil {s}:{a}: expected basmala prefix, got {head_u} / {head_s}")
             offset = 4
-        rec: dict[str, Any] = {"c": "tanzil", "s": s, "a": a, "tu": text_u, "ts": text_s, "o": offset}
+        text_v = voc[(s, a)]
+        if [t.strict for t in tokenize(text_v)] != [t.strict for t in tok_s]:
+            raise SystemExit(f"tanzil {s}:{a}: vocalised simple text is not word-aligned with simple-clean")
+        rec: dict[str, Any] = {
+            "c": "tanzil", "s": s, "a": a, "tu": text_u, "ts": text_s, "tv": text_v, "o": offset
+        }
         rec.update(_pack(tok_u))
         rec["L2"] = " ".join(t.loose for t in tok_s)
         rec["S2"] = " ".join(t.strict for t in tok_s)
@@ -229,7 +238,7 @@ def main() -> int:
     meta: dict[str, Any] = {"built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
     print("tanzil …")
-    tanzil = build_tanzil(by_id["tanzil_uthmani"], by_id["tanzil_simple_clean"])
+    tanzil = build_tanzil(by_id["tanzil_uthmani"], by_id["tanzil_simple_clean"], by_id["tanzil_simple"])
     print("ohd …")
     ohd = build_ohd(by_id["ohd"], meta)
     print("hadeethenc …")
