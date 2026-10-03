@@ -30,7 +30,7 @@
 - `frontend/public/sw.js` — PWA shell، **لا يخزّن `/v1/*` ولا `/health` أبدًا**
 - `ecosystem.config.cjs` — API على :8000 (يقدّم `frontend/dist`)، معاينة UI على :3000
 
-**ملفات معدّلة:** `App.tsx` (توجيه + تحميل كسول)، `Check.tsx` (أعيدت كتابته على نفس العقد)، `Check.test.tsx`، `i18n.ts` (حُذفت آية مكتوبة باليد كانت في placeholder — كانت خرقًا للخط الأحمر)، `main.tsx`، `manifest.webmanifest`، `tsconfig.app.json` (+types node للاختبارات)، `docs/DECISIONS.md` (**E-047**)، `docs/STATE.md` (§0.9).
+**ملفات معدّلة:** `App.tsx` (توجيه + تحميل كسول)، `Check.tsx` (أعيدت كتابته على نفس العقد)، `Check.test.tsx`، `i18n.ts` (حُذفت آية مكتوبة باليد كانت في placeholder — كانت خرقًا للخط الأحمر)، `main.tsx`، `manifest.webmanifest`، `tsconfig.app.json` (+types node للاختبارات)، `docs/DECISIONS.md` (**E-050**)، `docs/STATE.md` (§0.9).
 
 **تعديل الباك إند الوحيد:** `backend/app/main.py` — إضافة `GZipMiddleware(minimum_size=1024)` لأن الخادم يقدّم الواجهة بنفسه (JS من 340 kB إلى 99 kB). لا تعديل على `state.py` أو العتبات أو V1–V5 أو أي منطق مطابقة.
 
@@ -81,7 +81,7 @@ pm2 start ecosystem.config.cjs      # API :8000 يقدّم frontend/dist
 # افتح / و /check و /trust على 375 و 1440؛ شغّل فحصًا حقيقيًا من «منشور فيه اقتباسات متعددة»
 
 # 4) الدمج
-git checkout main && git merge --no-ff design/claude -m "merge: UI v3 «البصيرة» (E-047)"
+git checkout main && git merge --no-ff design/claude -m "merge: UI v3 «البصيرة» (E-050)"
 git push origin main
 # 5) تحقّق ما بعد الدمج (CLAUDE.md): pull نظيف + كل البوابات مرة أخرى على main
 ```

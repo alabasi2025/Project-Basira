@@ -200,7 +200,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         "upgrade-insecure-requests"
     )
 
-    # Frontend need (WP-v3, E-047): the built bundle is served by this process (BASIRA_STATIC_DIR); without
+    # Frontend need (WP-v3, E-050): the built bundle is served by this process (BASIRA_STATIC_DIR); without
     # compression the browser downloads ~340 kB of JS instead of ~106 kB. Responses carry no secrets/cookies.
     from starlette.middleware.gzip import GZipMiddleware  # noqa: PLC0415
 

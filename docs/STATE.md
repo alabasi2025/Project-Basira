@@ -31,7 +31,7 @@ original sandbox; `docs/internal/` is its complete substitute. Never publish `do
 ## 0.7 Competition (read before building anything user-facing)
 **`docs/COMPETITION.md`** = public-safe master analysis (dates, deliverables, judging weights 25/20/15/15/10/10/5, rubric→features, idea-deck commitments, conflicts C1–C5, win plan). Official files + private digest: `docs/internal/competition/` (never publish). **Open: D-012 (C1 baseline transparency) — ask the owner once per session until answered.**
 
-## 0.9 Branch design/claude (2026-10-03) — UI v3, see DECISIONS E-047. Not merged; owner review pending. Run: `pm2 start ecosystem.config.cjs` (API :8000 serves frontend/dist; UI preview :3000).
+## 0.9 Branch design/claude (2026-10-03) — UI v3, see DECISIONS E-050 (renumbered from E-047 at merge; E-047 = English gate data layer). Merged to main 2026-10-03; owner review pending. Run: `pm2 start ecosystem.config.cjs` (API :8000 serves frontend/dist; UI preview :3000).
 
 ## 1. Done (verified, committed)
 
