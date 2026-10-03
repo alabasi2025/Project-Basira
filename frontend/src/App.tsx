@@ -1,12 +1,12 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import type { Lang } from "./api";
-import Check from "./Check";
 import Home from "./site/Home";
 import { useLocation } from "./site/router";
 import { Footer, Header } from "./site/Shell";
 import { t } from "./site/strings";
 
-// secondary pages are separate chunks: the home/check path stays small
+// the workspace and secondary pages are separate chunks: the home page (the hook) ships only what it shows
+const Check = lazy(() => import("./Check"));
 const Services = lazy(() => import("./site/Pages").then((m) => ({ default: m.Services })));
 const Developers = lazy(() => import("./site/Pages").then((m) => ({ default: m.Developers })));
 const Trust = lazy(() => import("./site/Pages").then((m) => ({ default: m.Trust })));
