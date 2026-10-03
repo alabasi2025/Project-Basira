@@ -237,9 +237,13 @@ def test_b05_attribution_only_kind_classifies_without_a_matn() -> None:
     assert attribution_only_kind("رواه البخاري") == "attribution"
     assert attribution_only_kind("«متفق عليه»") == "attribution"
     assert attribution_only_kind("أخرجه مسلم في صحيحه") == "attribution"
-    assert attribution_only_kind("قال ﷺ: «رواه البخاري ومسلم»") == "attribution"  # introducer kept by extractor
+    assert (
+        attribution_only_kind("قال ﷺ: «رواه البخاري ومسلم»") == "attribution"
+    )  # introducer kept by extractor
     # isnad only: a chain of narrators that stops before any matn
-    assert attribution_only_kind("عن أبي هريرة رضي الله عنه قال: قال رسول الله صلى الله عليه وسلم:") == "isnad"
+    assert (
+        attribution_only_kind("عن أبي هريرة رضي الله عنه قال: قال رسول الله صلى الله عليه وسلم:") == "isnad"
+    )
     assert attribution_only_kind("حدثنا عبد الله بن يوسف قال أخبرنا مالك عن نافع عن ابن عمر") == "isnad"
     # anything with words of its own is NOT attribution-only (fixture matn + a verbatim narrator line)
     assert attribution_only_kind("إنما الأعمال بالنيات") is None
