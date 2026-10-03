@@ -321,3 +321,51 @@ async def test_isnad_that_is_verbatim_in_a_record_stays_found(pipeline: Pipeline
 async def test_isnad_with_matn_is_untouched_by_b05(pipeline: Pipeline) -> None:
     r = await run(pipeline, "قال رسول الله ﷺ: «إنما الأعمال بالنيات» رواه البخاري")
     assert r.quotes[0].status == "found" and r.quotes[0].review_reason is None
+
+
+# ---- B10: never a silent cut ------------------------------------------------------------------
+
+
+async def test_more_quotes_than_max_is_declared_not_silently_cut(pipeline: Pipeline) -> None:
+    small = Pipeline(
+        pipeline.store,
+        pipeline.retriever,
+        pipeline.llm,
+        replace(pipeline.settings, max_quotes=2),
+        pipeline.meta,
+    )
+    text = " ".join(f"قال تعالى: ﴿إن الله مع الصابرين﴾ {i}" for i in range(4))
+    r = await run(small, text)
+    assert r.quotes_detected == 4 and r.extraction_truncated is True
+    assert len(r.quotes) <= 2
+    assert all("extraction_truncated" in q.notice_keys for q in r.quotes)
+    ok = await run(pipeline, text)
+    assert ok.quotes_detected == 4 and ok.extraction_truncated is False
+    assert not any("extraction_truncated" in q.notice_keys for q in ok.quotes)
+
+
+async def test_truncation_notice_is_lexicon_clean(pipeline: Pipeline) -> None:
+    from app.messages import load_messages  # noqa: PLC0415
+
+    for lang in ("ar", "en"):
+        m = load_messages(pipeline.settings.messages_dir, lang)
+        for key in ("extraction_truncated", "ocr_truncated"):
+            assert m.has("notice", key) and scan_forbidden(m.get("notice", key)) == []
+
+
+# ---- B07: a multi-ayah quote shows every ayah as its own verbatim record -----------------------
+
+
+async def test_multi_ayah_quote_carries_one_verbatim_segment_per_ayah(pipeline: Pipeline) -> None:
+    r = await run(pipeline, "قال تعالى: ﴿قل هو الله أحد الله الصمد﴾")
+    q = r.quotes[0]
+    assert q.status == "found"
+    m = q.matches[0]
+    assert m.continues_to is not None and int(m.continues_to["ayah"]) == 2
+    assert [(s.ref["surah"], s.ref["ayah"]) for s in m.source_segments] == [(112, 1), (112, 2)]
+    for seg in m.source_segments:
+        rec = pipeline.store.lookup("tanzil", surah=int(seg.ref["surah"]), ayah=int(seg.ref["ayah"]))
+        assert rec is not None and seg.source_text == rec.display  # byte-exact, never a joined line
+        assert seg.source_url.startswith("https://quranpedia.net/")
+    single = await run(pipeline, "قال تعالى: ﴿إن الله مع الصابرين﴾")
+    assert single.quotes[0].matches[0].source_segments == []

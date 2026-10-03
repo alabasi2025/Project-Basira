@@ -276,3 +276,28 @@ def test_b05_message_keys_exist_and_are_clean() -> None:
         m = load_messages(MESSAGES, lang)
         assert m.has("status", "needs_review_attribution_only")
         assert scan_forbidden(m.get("status", "needs_review_attribution_only")) == []
+
+
+# --------------------------------------------------------------------------- B07 (segments are records)
+
+
+def test_b07_forged_source_segment_is_rejected() -> None:
+    from app.schemas import SourceSegment  # noqa: PLC0415
+
+    m = match()
+    m.source_segments = [
+        SourceSegment(
+            ref={"surah": 2, "ayah": 153},
+            ref_label_ar="x",
+            ref_label_en="x",
+            source_text="إِنَّ ٱللَّهَ مَعَ ٱلصَّـٰبِرِينَ",
+            source_url="https://quranpedia.net/surah/1/2/153",
+        )
+    ]
+    assert validate_response(resp(quote(matches=[m])), tiny_store(), MESSAGES).validator_rejections == 0
+    m.source_segments[0].source_text = "إِنَّ ٱللَّهَ مَعَ ٱلصَّـٰبِرِينَ."  # one byte off → V1 per segment
+    out = validate_response(resp(quote(matches=[m])), tiny_store(), MESSAGES)
+    assert out.validator_rejections == 1 and out.quotes[0].status == "needs_review"
+    m.source_segments[0].source_text = "إِنَّ ٱللَّهَ مَعَ ٱلصَّـٰبِرِينَ"
+    m.source_segments[0].ref = {"surah": 99, "ayah": 1}  # unknown record → V2 per segment
+    assert validate_response(resp(quote(matches=[m])), tiny_store(), MESSAGES).validator_rejections == 1

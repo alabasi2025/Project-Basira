@@ -61,6 +61,7 @@ from app.schemas import (
     Match,
     QuoteResult,
     SegmentModel,
+    SourceSegment,
     Span,
     Timings,
 )
@@ -71,6 +72,17 @@ from app.verify import validate_response
 log = logging.getLogger(__name__)
 
 PROVIDER_TIMEOUT_S = 8.0
+
+
+def _tag_truncated(resp: CheckResponse) -> None:
+    """B10: when spans were cut at `max_quotes`, every returned quote carries the notice (no silent cut)."""
+    if not resp.extraction_truncated:
+        return
+    for qr in resp.quotes:
+        if "extraction_truncated" not in qr.notice_keys:
+            qr.notice_keys.append("extraction_truncated")
+
+
 RETRIEVE_TOP_K = 50
 FUZZY_MAX_DOCS = 100
 
@@ -183,6 +195,8 @@ class Pipeline:
                     sp.claimed_source = find_claimed_source(text, sp.start, sp.end)
         except (ProviderError, TimeoutError):
             degraded = True
+        quotes_detected = len(spans)
+        truncated = quotes_detected > self.settings.max_quotes
         spans = spans[: self.settings.max_quotes]
         timings.extract = _ms(t0)
 
@@ -239,7 +253,10 @@ class Pipeline:
             flags=flags,
             quotes=quotes,
             timings_ms=timings,
+            quotes_detected=quotes_detected,
+            extraction_truncated=truncated,
         )
+        _tag_truncated(resp)
         resp = validate_response(
             resp,
             self.store,
@@ -840,10 +857,23 @@ class Pipeline:
             rng = [mapped[0][0], mapped[-1][1]]
 
         continues_to = None
+        segments: list[SourceSegment] = []
         if rec.corpus == "tanzil" and carrier is not None and win_n > 0:
             covered = records_covering(self.store, carrier.gpos, win_n)
             if len(covered) > 1:
                 continues_to = covered[-1].ref
+                # B07: every covered ayah as its own verbatim record — the proof is visible, not implied
+                for r in covered:
+                    la, le = self._labels(r, None)
+                    segments.append(
+                        SourceSegment(
+                            ref=r.ref,
+                            ref_label_ar=la,
+                            ref_label_en=le,
+                            source_text=r.display,
+                            source_url=quran_url(r.surah, r.ayah),
+                        )
+                    )
 
         grade = None
         if d.attach_grade and rec.corpus == "hadeethenc":
@@ -879,6 +909,7 @@ class Pipeline:
             score=round(ev.score, 4),
             grade=grade,
             continues_to=continues_to,
+            source_segments=segments,
         )
 
     def _diff_ops(  # noqa: PLR0912 — one branch per diff family (harakat / foreign / word), flat on purpose

@@ -47,4 +47,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=4).status==200 else 1)"
 WORKDIR /app/backend
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers 1 --log-level warning --proxy-headers --forwarded-allow-ips='*'"]
+# B12: X-Forwarded-For is trusted only from known proxies. uvicorn reads FORWARDED_ALLOW_IPS (default 127.0.0.1);
+# set it AND BASIRA_TRUSTED_PROXIES to the load balancer's address/CIDR at deploy time — never '*'.
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers 1 --log-level warning --proxy-headers"]

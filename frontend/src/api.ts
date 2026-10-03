@@ -37,6 +37,15 @@ export interface Match {
   score: number;
   grade: Grade | null;
   continues_to: Record<string, number> | null;
+  /** B07: every ayah a multi-ayah quote covers, each a verbatim record (empty unless > 1 ayah). */
+  source_segments: SourceSegment[];
+}
+export interface SourceSegment {
+  ref: Record<string, string | number>;
+  ref_label_ar: string;
+  ref_label_en: string;
+  source_text: string;
+  source_url: string;
 }
 export interface QuoteResult {
   id: string;

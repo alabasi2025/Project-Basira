@@ -85,6 +85,16 @@ class Link(BaseModel):
     url: str
 
 
+class SourceSegment(BaseModel):
+    """B07: one corpus record of a multi-ayah quote, verbatim — never a generated joined line (V1 checks each)."""
+
+    ref: dict[str, Any]
+    ref_label_ar: str
+    ref_label_en: str
+    source_text: str  # the record's display field, byte-exact
+    source_url: str
+
+
 class Match(BaseModel):
     corpus: CorpusName
     ref: dict[str, Any]
@@ -100,6 +110,8 @@ class Match(BaseModel):
     score: float
     grade: Grade | None = None
     continues_to: dict[str, Any] | None = None  # Quran: last ayah ref when the quote spans several
+    # B07: every ayah the quote covers, in Mushaf order, each one a verbatim record (empty unless > 1 ayah)
+    source_segments: list[SourceSegment] = Field(default_factory=list)
 
 
 class SegmentModel(BaseModel):
@@ -185,7 +197,14 @@ class CheckResponse(BaseModel):
     quotes: list[QuoteResult]
     validator_rejections: int = 0
     timings_ms: Timings
+    # B10: never a silent cut. `quotes_detected` = spans found before the cap; `extraction_truncated` = true
+    # when more than `max_quotes` were found and only the first ones were checked.
+    quotes_detected: int = 0
+    extraction_truncated: bool = False
     ocr_text: str | None = None
+    ocr_truncated: bool = (
+        False  # B10: the image text exceeded max_text_chars; only the first part was checked
+    )
     # E-032: sha256(index records sha + normalized input + every quote verdict). Same input on the same
     # corpus build ⇒ same hash — a judge can re-run and compare. Excludes request_id/timings.
     determinism_hash: str = ""  # image path only: the text as read, so the user can verify it (ADR-003)

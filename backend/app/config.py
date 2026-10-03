@@ -64,6 +64,13 @@ class Settings:
     max_positions_shown: int = 5
     rate_limit_per_min: int = field(default_factory=lambda: int(_env("BASIRA_RATE_LIMIT_PER_MIN", "30")))
     eval_key: str = field(default_factory=lambda: _env("BASIRA_EVAL_KEY", ""))  # X-Eval-Key bypass (T5)
+    # B12: `X-Forwarded-For` is honoured for the rate-limit key ONLY when the TCP peer is one of these
+    # (comma-separated IPs / CIDRs). Empty (default) = never trust the header → the peer address is the key.
+    trusted_proxies: tuple[str, ...] = field(
+        default_factory=lambda: tuple(
+            p.strip() for p in _env("BASIRA_TRUSTED_PROXIES", "").split(",") if p.strip()
+        )
+    )
     cors_origins: tuple[str, ...] = field(
         default_factory=lambda: tuple(
             o.strip() for o in _env("BASIRA_CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()

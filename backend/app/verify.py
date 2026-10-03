@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 from app.extract.rules import parse_claimed_source
 from app.extract.segments import _NARRATOR  # single source of truth for the isnad shape (read-only use)
@@ -50,11 +51,14 @@ MAX_PROOF_SPAN_TOKENS = 4096  # a Quran surah stream window large enough for any
 
 
 def _lookup(store: Store, m: Match) -> Record | None:
-    r = m.ref
+    return _lookup_ref(store, m.corpus, m.ref)
+
+
+def _lookup_ref(store: Store, corpus: str, r: dict[str, Any]) -> Record | None:
     try:
-        if m.corpus == "tanzil":
+        if corpus == "tanzil":
             return store.lookup("tanzil", surah=int(r["surah"]), ayah=int(r["ayah"]))
-        if m.corpus == "ohd":
+        if corpus == "ohd":
             return store.lookup("ohd", book=str(r["book"]), num=int(r["num"]))
         return store.lookup("hadeethenc", id=int(r["id"]))
     except (KeyError, TypeError, ValueError):
@@ -75,6 +79,15 @@ def _match_ok(store: Store, m: Match, *, hadeethenc_link: bool) -> bool:
         if rec.corpus != "hadeethenc":
             return False
         if m.grade.text != rec.grade or m.grade.takhrij != rec.takhrij or m.grade.url != rec.link:
+            return False
+    return _segments_ok(store, m)
+
+
+def _segments_ok(store: Store, m: Match) -> bool:
+    """B07: every source segment is itself a record, byte-exact (V1/V2 per element — never a joined line)."""
+    for seg in m.source_segments:
+        srec = _lookup_ref(store, "tanzil", seg.ref)
+        if srec is None or seg.source_text != srec.display:
             return False
     return True
 
