@@ -1,4 +1,4 @@
-.PHONY: bootstrap fetch index lint test gates smoke fixture serve eval eval-full islamiceval islamiceval-1a fetch-translations eval-english
+.PHONY: bootstrap fetch index lint test gates smoke fixture serve eval eval-full islamiceval islamiceval-1a fetch-translations eval-english serve-mcp mcp-demo
 PY=backend/.venv/bin/python
 bootstrap: ; bash scripts/bootstrap.sh
 fetch:     ; python3 corpus/fetch.py
@@ -16,3 +16,5 @@ islamiceval-1a: ; $(PY) eval/islamiceval/run_1a.py
 scholar:   ; $(PY) eval/scholar_probe.py $${BASIRA_URL:-http://localhost:8000}
 fetch-translations: ; python3 corpus/fetch_translations.py
 eval-english: ; $(PY) eval/run_english.py --fail-under 0.9
+serve-mcp: ; cd backend && BASIRA_MCP=1 .venv/bin/uvicorn app.main:app --port 8000
+mcp-demo:  ; $(PY) scripts/mcp_demo.py

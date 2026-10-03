@@ -14,13 +14,15 @@ from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamable_http_client
 
 from app.config import Settings
 from app.main import create_app
 from app.mcp_server import TOOL_NAMES
 from app.messages import scan_forbidden
+
+pytest.importorskip("mcp.client.session", reason="optional extra: pip install -e 'backend[mcp]'")
+from mcp.client.session import ClientSession
+from mcp.client.streamable_http import streamable_http_client
 
 SessionFactory = Callable[[], AbstractAsyncContextManager[ClientSession]]
 AppFactory = Callable[[], AbstractAsyncContextManager[tuple[Any, AsyncClient]]]

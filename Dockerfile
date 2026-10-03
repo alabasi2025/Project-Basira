@@ -16,7 +16,7 @@ FROM python:3.12-slim AS py
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 COPY backend/pyproject.toml backend/
-RUN pip install --no-cache-dir ./backend
+RUN pip install --no-cache-dir "./backend[mcp]"
 
 # ---------- 3) corpus + index + snapshot (cached layer; re-runs only if manifest changes) ----------
 FROM py AS index
