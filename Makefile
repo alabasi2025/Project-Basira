@@ -1,4 +1,4 @@
-.PHONY: bootstrap fetch index lint test gates smoke fixture serve eval eval-full islamiceval islamiceval-1a
+.PHONY: bootstrap fetch index lint test gates smoke fixture serve eval eval-full islamiceval islamiceval-1a fetch-translations eval-english
 PY=backend/.venv/bin/python
 bootstrap: ; bash scripts/bootstrap.sh
 fetch:     ; python3 corpus/fetch.py
@@ -14,3 +14,5 @@ eval-full: ; $(PY) eval/run_eval.py --index corpus/index --repeats 3 --false-ala
 islamiceval: ; $(PY) eval/islamiceval/run_1b.py
 islamiceval-1a: ; $(PY) eval/islamiceval/run_1a.py
 scholar:   ; $(PY) eval/scholar_probe.py $${BASIRA_URL:-http://localhost:8000}
+fetch-translations: ; python3 corpus/fetch_translations.py
+eval-english: ; $(PY) eval/run_english.py --fail-under 0.9
