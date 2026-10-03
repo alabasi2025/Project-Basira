@@ -21,6 +21,23 @@ function mockFetch(resp: CheckResponse = RESP, status = 200) {
     if (url.endsWith("/health")) return new Response(JSON.stringify({ status: "ok", corpus_loaded: true, corpus: RESP.corpus, counts: {}, rss_mb: 1, build_sha: "t" }), { status: 200 });
     if (url.endsWith("/v1/sources")) return new Response(JSON.stringify(SOURCES), { status: 200 });
     if (url.endsWith("/v1/check")) return new Response(JSON.stringify(resp), { status });
+    if (url.endsWith("/v1/guard"))
+      return new Response(
+        JSON.stringify({
+          verdict: "flagged",
+          counts: { quotes: 2, found: 1, flagged: 1, by_status: { found: 1, not_found: 1 } },
+          flagged_quote_ids: ["q2"],
+          quotes: [
+            { id: "q1", quoted_text: RESP.quotes[0]?.quoted_text ?? "", status: "found", review_reason: null },
+            { id: "q2", quoted_text: "x", status: "not_found", review_reason: null },
+          ],
+          summary_ar: "ملخص الحارس",
+          summary_en: "Guard summary",
+          determinism_hash: "a".repeat(64),
+          corpus: RESP.corpus,
+        }),
+        { status: 200 },
+      );
     return new Response("{}", { status: 404 });
   });
   vi.stubGlobal("fetch", fn);
@@ -137,15 +154,21 @@ describe("Check page", () => {
 });
 
 describe("Check modes", () => {
-  it("coming-soon modes never call the engine and never show a result", async () => {
+  it("English mode uses the same /v1/check engine; Guard mode calls /v1/guard and shows its verdict", async () => {
     const fetchMock = mockFetch();
     const user = userEvent.setup();
     render(<Check lang="ar" />);
     await user.click(screen.getByRole("tab", { name: new RegExp(SITE.ar.mode_en) }));
-    expect(screen.getByText(SITE.ar.soon_panel_en)).toBeInTheDocument();
-    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByText(SITE.ar.en_hint)).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: new RegExp(SITE.ar.mode_guard) }));
-    expect(screen.getByText(SITE.ar.soon_panel_guard)).toBeInTheDocument();
-    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/v1/check"))).toBe(false);
+    expect(screen.getByText(SITE.ar.guard_hint)).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox"), "نص للفحص");
+    await user.click(screen.getByRole("button", { name: new RegExp(SITE.ar.guard_run) }));
+    expect(await screen.findByTestId("guard-panel")).toBeInTheDocument();
+    expect(screen.getByText(SITE.ar.guard_flagged)).toBeInTheDocument();
+    expect(screen.getByText("ملخص الحارس")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/v1/guard"))).toBe(true);
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/v1/check"))).toBe(false);
   });
 });

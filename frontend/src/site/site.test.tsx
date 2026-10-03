@@ -89,9 +89,11 @@ describe("LensDemo", () => {
 });
 
 describe("services & routing", () => {
-  it("not-yet-built services never link into the live workspace", () => {
+  it("every service is live and links to a real surface (E-048/E-049/E-052 shipped)", () => {
     for (const s of SERVICES.filter((x) => !x.live)) expect(s.href.startsWith("/check")).toBe(false);
-    expect(SERVICES.filter((x) => x.live).map((x) => x.id)).toEqual(["text", "image", "api", "trust"]);
+    expect(SERVICES.filter((x) => x.live).map((x) => x.id)).toEqual(["text", "image", "english", "guard", "api", "receipt", "trust"]);
+    expect(SERVICES.find((x) => x.id === "guard")?.href).toBe("/check?mode=guard");
+    expect(SERVICES.find((x) => x.id === "english")?.href).toBe("/check?mode=english");
   });
   it("routes resolve", () => {
     expect(routeOf("/")).toBe("home");

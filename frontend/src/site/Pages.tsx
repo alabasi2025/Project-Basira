@@ -44,7 +44,6 @@ export function Services({ lang }: { lang: Lang }) {
               <div className="svc-row__body">
                 <h2>
                   {t(lang, s.title)} {s.live ? <LiveBadge lang={lang} /> : <SoonBadge lang={lang} long />}
-                  {s.id === "api" && <SoonBadge lang={lang} />}
                 </h2>
                 <p>{t(lang, s.desc)}</p>
                 <p className="svc-row__out">{t(lang, s.out)}</p>
@@ -108,6 +107,12 @@ export function Developers({ lang }: { lang: Lang }) {
     ["POST", "/v1/check/image", "ep_image"],
     ["GET", "/v1/sources", "ep_sources"],
     ["GET", "/v1/messages/{ar|en}", "ep_messages"],
+    ["POST", "/v1/guard", "ep_guard"],
+    ["POST", "/v1/receipt", "ep_receipt"],
+    ["GET", "/v/{token}?h=", "ep_replay"],
+    ["GET", "/v1/rules", "ep_rules"],
+    ["GET", "/v1/models", "ep_models"],
+    ["POST", "/mcp", "ep_mcp"],
     ["GET", "/docs", "ep_docs"],
   ];
   return (
@@ -152,7 +157,7 @@ export function Developers({ lang }: { lang: Lang }) {
         </section>
         <section className="dev-mcp" aria-labelledby="dm" data-reveal>
           <h2 id="dm">
-            {t(lang, "dev_mcp")} <SoonBadge lang={lang} long />
+            {t(lang, "dev_mcp")} <LiveBadge lang={lang} />
           </h2>
           <p>{t(lang, "dev_mcp_d")}</p>
           <CopyBlock code={mcp} lang={lang} label={t(lang, "dev_mcp_cfg")} />

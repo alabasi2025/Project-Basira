@@ -1,24 +1,23 @@
 /** مساحة التحقق — the workspace. Same engine contract as before (E-042 results workspace is reused as-is);
- *  new: mode tabs (live: text, image · coming soon: English, Guard — never simulated), generated examples
+ *  new: mode tabs (text, image, English, Guard — all on the live engine; E-048/E-049/E-052), generated examples
  *  (from eval/cases.yaml + smoke), and a «what happened» strip that makes the AI's role and the engine's
  *  role visible for every real response. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BasiraError, check, checkImage, type CheckResponse, type Lang } from "./api";
+import { BasiraError, check, checkImage, guard, receipt, receiptUrl, type CheckResponse, type GuardResponse, type Lang, type Receipt } from "./api";
 import { Icon, type BasiraIconName } from "./brand";
 import { ResultsView } from "./components/ResultsView";
 import { MAX_CHARS, msg, ui } from "./i18n";
 import examples from "./__generated__/examples.json";
 import { useHealth } from "./site/hooks";
-import { SoonBadge } from "./site/Shell";
 import { numfmt, t, type SiteKey } from "./site/strings";
 
 type Mode = "text" | "image" | "english" | "guard";
 const MODES: { id: Mode; key: SiteKey; icon: BasiraIconName; live: boolean }[] = [
   { id: "text", key: "mode_text", icon: "paste-text", live: true },
   { id: "image", key: "mode_image", icon: "ocr-scan", live: true },
-  { id: "english", key: "mode_en", icon: "language", live: false },
-  { id: "guard", key: "mode_guard", icon: "shield-verify", live: false },
+  { id: "english", key: "mode_en", icon: "language", live: true },
+  { id: "guard", key: "mode_guard", icon: "shield-verify", live: true },
 ];
 
 export const EXAMPLES = (examples as { items: { key: string; icon: BasiraIconName; text: string; provenance: string }[] }).items;
@@ -34,7 +33,7 @@ export function buildReport(r: CheckResponse, lang: Lang): string {
   return lines.join("\n");
 }
 
-function Pipeline({ r, lang }: { r: CheckResponse; lang: Lang }) {
+function Pipeline({ r, lang, text }: { r: CheckResponse; lang: Lang; text: string }) {
   const nf = numfmt(lang);
   const ai = r.extraction_provider.startsWith("mock") ? null : r.extraction_provider.split(":").pop();
   return (
@@ -70,9 +69,97 @@ function Pipeline({ r, lang }: { r: CheckResponse; lang: Lang }) {
           </code>
         ))}
       </p>
-      <p className="pipe__receipt">
-        <Icon name="share-link" size={16} />
-        {t(lang, "receipt_soon")} <SoonBadge lang={lang} />
+      <ReceiptBox lang={lang} text={text} />
+    </section>
+  );
+}
+
+
+function ReceiptBox({ lang, text }: { lang: Lang; text: string }) {
+  const [rc, setRc] = useState<Receipt | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [err, setErr] = useState(false);
+  useEffect(() => {
+    setRc(null);
+    setErr(false);
+  }, [text]);
+  if (!text.trim()) return null;
+  const make = async () => {
+    setBusy(true);
+    setErr(false);
+    try {
+      setRc(await receipt(text, lang));
+    } catch {
+      setErr(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const copy = async () => {
+    if (!rc) return;
+    await navigator.clipboard.writeText(receiptUrl(rc));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <div className="pipe__receipt" data-testid="receipt-box">
+      {!rc && (
+        <button type="button" className="btn-ghost-lux" onClick={() => void make()} disabled={busy}>
+          <Icon name="share-link" size={16} />
+          {busy ? t(lang, "receipt_making") : t(lang, "receipt_make")}
+        </button>
+      )}
+      {err && <span className="set-fail">{ui(lang, "error_network")}</span>}
+      {rc && (
+        <>
+          <span dir="auto">
+            {t(lang, "receipt_ready", { id: rc.receipt_id })}
+          </span>
+          <button type="button" className="btn-ghost-lux" onClick={() => void copy()}>
+            <Icon name={copied ? "state-found" : "copy"} size={16} />
+            {copied ? t(lang, "receipt_copied") : t(lang, "receipt_copy")}
+          </button>
+          <a className="btn-ghost-lux" href={receiptUrl(rc)} target="_blank" rel="noopener noreferrer">
+            <Icon name="source-link" size={16} />
+            {t(lang, "receipt_open")}
+          </a>
+        </>
+      )}
+    </div>
+  );
+}
+
+function GuardPanel({ g, lang }: { g: GuardResponse; lang: Lang }) {
+  const nf = numfmt(lang);
+  const tone = g.verdict === "clear" ? "found" : g.verdict === "flagged" ? "needs_review" : "not_found";
+  return (
+    <section className="card card--pad guard-panel" data-verdict={g.verdict} aria-live="polite" data-testid="guard-panel">
+      <h3 className={`state-${tone === "found" ? "found" : tone === "needs_review" ? "review" : "notfound"}`}>
+        <Icon name={tone === "found" ? "state-found" : tone === "needs_review" ? "state-partial" : "state-notfound"} size={18} />
+        {t(lang, g.verdict === "clear" ? "guard_clear" : g.verdict === "flagged" ? "guard_flagged" : "guard_none")}
+      </h3>
+      <p dir="auto">{lang === "ar" ? g.summary_ar : g.summary_en}</p>
+      {g.quotes.length > 0 && (
+        <ol className="guard-list">
+          {g.quotes.map((q) => (
+            <li key={q.id} data-flagged={g.flagged_quote_ids.includes(q.id) || undefined}>
+              <span className={`badge state-${q.status === "found" ? "found" : q.status === "partial_match" ? "partial" : q.status === "needs_review" ? "review" : "notfound"}`}>
+                {msg(lang, "labels", q.status)}
+              </span>{" "}
+              <span dir="auto">«{q.quoted_text}»</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      <p className="pipe__corpus">
+        <span>{t(lang, "pipe_corpus")}:</span>
+        {Object.entries(g.corpus).map(([k, v]) => (
+          <code key={k} dir="ltr">
+            {k} {v}
+          </code>
+        ))}
+        <code dir="ltr">{nf.format(g.counts.quotes)} · {g.determinism_hash.slice(0, 12)}…</code>
       </p>
     </section>
   );
@@ -92,6 +179,7 @@ export default function Check({ lang }: { lang: Lang; onLang?: (l: Lang) => void
   const [text, setText] = useState(initialText);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CheckResponse | null>(null);
+  const [guardResult, setGuardResult] = useState<GuardResponse | null>(null);
   const [checkedText, setCheckedText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -140,6 +228,29 @@ export default function Check({ lang }: { lang: Lang; onLang?: (l: Lang) => void
     e.preventDefault();
     if (!text.trim() || busy) return;
     setCheckedText(text);
+    if (mode === "guard") {
+      abort.current?.abort();
+      const ac = new AbortController();
+      abort.current = ac;
+      setBusy(true);
+      setError(null);
+      setResult(null);
+      void guard(text, lang, ac.signal)
+        .then((g) => {
+          setGuardResult(g);
+          setTimeout(() => resultsRef.current?.focus(), 0);
+        })
+        .catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          if (err instanceof BasiraError) {
+            const b = err.body?.error;
+            setError(b ? (lang === "ar" ? b.message_ar : b.message_en) : msg(lang, "errors", "internal"));
+          } else setError(ui(lang, "error_network"));
+        })
+        .finally(() => setBusy(false));
+      return;
+    }
+    setGuardResult(null);
     void run((signal) => check(text, lang, signal));
   };
   const onFile = (f: File | undefined) => {
@@ -164,7 +275,6 @@ export default function Check({ lang }: { lang: Lang; onLang?: (l: Lang) => void
   const n = result?.quotes.length ?? 0;
   const nf = numfmt(lang);
   const ready = healthState === "ok";
-  const live = MODES.find((m) => m.id === mode)?.live ?? false;
 
   return (
     <main id="main" className="page page--check">
@@ -190,14 +300,19 @@ export default function Check({ lang }: { lang: Lang; onLang?: (l: Lang) => void
             >
               <Icon name={m.icon} size={18} />
               <span>{t(lang, m.key)}</span>
-              {!m.live && <SoonBadge lang={lang} />}
             </button>
           ))}
         </div>
 
         <div id="ws-panel" role="tabpanel" aria-labelledby={`tab-${mode}`} className="ws-panel">
-          {mode === "text" && (
+          {(mode === "text" || mode === "english" || mode === "guard") && (
             <form className="composer-lux" onSubmit={onSubmit}>
+              {mode !== "text" && (
+                <p className="ws-hint" dir="auto">
+                  <Icon name={mode === "english" ? "language" : "shield-verify"} size={16} />
+                  {t(lang, mode === "english" ? "en_hint" : "guard_hint")}
+                </p>
+              )}
               <div className="composer-lux__label">
                 <label htmlFor="text">{ui(lang, "input_label")}</label>
                 <span className="health health--inline" data-state={healthState} aria-live="polite">
@@ -211,7 +326,7 @@ export default function Check({ lang }: { lang: Lang; onLang?: (l: Lang) => void
                 ref={textareaRef}
                 className="composer-lux__input"
                 dir="auto"
-                lang="ar"
+                lang={mode === "english" ? "en" : "ar"}
                 value={text}
                 maxLength={MAX_CHARS}
                 placeholder={ui(lang, "input_placeholder")}
@@ -245,7 +360,7 @@ export default function Check({ lang }: { lang: Lang; onLang?: (l: Lang) => void
                   </button>
                   <button type="submit" className="btn-lux" disabled={busy || !text.trim() || !ready}>
                     <Icon name={busy ? "spinner" : "check-run"} size={18} />
-                    {busy ? ui(lang, "checking") : ui(lang, "check")}
+                    {busy ? ui(lang, "checking") : mode === "guard" ? t(lang, "guard_run") : ui(lang, "check")}
                   </button>
                 </div>
               </div>
@@ -284,16 +399,6 @@ export default function Check({ lang }: { lang: Lang; onLang?: (l: Lang) => void
             </div>
           )}
 
-          {!live && (
-            <div className="soon-panel">
-              <Icon name="limits" size={32} />
-              <p>{t(lang, mode === "english" ? "soon_panel_en" : "soon_panel_guard")}</p>
-              <p className="muted">{t(lang, mode === "english" ? "svc_en_out" : "svc_guard_out")}</p>
-              <button type="button" className="btn-ghost-lux" onClick={() => setMode("text")}>
-                {t(lang, "go_text_mode")}
-              </button>
-            </div>
-          )}
         </div>
 
         {mode === "text" && !result && !text && (
@@ -325,6 +430,7 @@ export default function Check({ lang }: { lang: Lang; onLang?: (l: Lang) => void
         )}
 
         <div id="results" ref={resultsRef} tabIndex={-1} className="results" aria-live="polite">
+          {guardResult && mode === "guard" && <GuardPanel g={guardResult} lang={lang} />}
           {result && (
             <>
               <div className="summary">
@@ -366,7 +472,7 @@ export default function Check({ lang }: { lang: Lang; onLang?: (l: Lang) => void
                 </div>
               )}
               {n > 0 && <ResultsView text={result.ocr_text ?? checkedText} result={result} lang={lang} />}
-              <Pipeline r={result} lang={lang} />
+              <Pipeline r={result} lang={lang} text={result.ocr_text ?? checkedText} />
             </>
           )}
         </div>

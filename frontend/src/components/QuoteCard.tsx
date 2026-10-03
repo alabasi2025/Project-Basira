@@ -152,6 +152,29 @@ export function QuoteCard({ q, lang }: { q: QuoteResult; lang: Lang }) {
         {q.matches.map((m, i) => (
           <MatchView key={`${m.corpus}-${JSON.stringify(m.ref)}-${i}`} m={m} q={q} lang={lang} />
         ))}
+        {q.english_candidates && q.english_candidates.length > 0 && (
+          <ol className="en-cands" aria-label={ui(lang, "en_candidates")} data-testid="english-candidates">
+            {q.english_candidates.map((c) => (
+              <li key={`${c.kind}-${c.source_url}`} data-selected={c.selected || undefined}>
+                <div className="en-cands__head">
+                  {c.selected && <span className="badge state-partial">{ui(lang, "en_selected")}</span>}
+                  <a href={c.source_url} target="_blank" rel="noopener noreferrer" dir="auto">
+                    {lang === "ar" ? c.ref_label_ar : c.ref_label_en}
+                  </a>
+                  <small dir="ltr">{c.translation_source}</small>
+                </div>
+                <p className="en-cands__tr" dir="ltr" lang="en">
+                  {c.translation_text}
+                </p>
+                {c.arabic_text && (
+                  <p className="diff-text source-text" dir="rtl" lang="ar">
+                    {c.arabic_text}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
+        )}
         {q.external_search_links.length > 0 && (
           <div className="links">
             {q.external_search_links.map((l) => (

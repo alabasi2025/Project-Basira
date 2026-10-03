@@ -63,11 +63,45 @@ export interface QuoteResult {
   notice_keys: string[];
   repeated_spans?: { start: number; end: number }[];
   segments?: { type: "Ayah" | "matn" | "isnad" | "claimed_source"; start: number; end: number }[];
+  english_candidates?: EnglishCandidate[];
+  picker?: "" | "rule" | "model" | "none";
   determinism_hash?: string;
   matches: Match[];
   total_positions: number;
   external_search_links: Link[];
 }
+export interface EnglishCandidate {
+  kind: "quran" | "hadith";
+  ref: Record<string, string | number>;
+  ref_label_ar: string;
+  ref_label_en: string;
+  arabic_text: string;
+  translation_text: string;
+  translation_source: string;
+  score: number;
+  source_url: string;
+  selected: boolean;
+}
+
+export interface GuardResponse {
+  verdict: "clear" | "flagged" | "no_quotes";
+  counts: { quotes: number; found: number; flagged: number; by_status: Record<string, number> };
+  flagged_quote_ids: string[];
+  quotes: { id: string; quoted_text: string; status: Status; review_reason: string | null; matches?: { ref_label_ar?: string; ref_label_en?: string; source_url?: string }[] }[];
+  summary_ar: string;
+  summary_en: string;
+  determinism_hash: string;
+  corpus: Record<string, string>;
+}
+
+export interface Receipt {
+  receipt_id: string;
+  determinism_hash: string;
+  issued_at: string;
+  token: string;
+  summary: { quotes: number; by_status: Record<string, number> };
+}
+
 export interface CheckResponse {
   request_id: string;
   disclaimer_key: string;
@@ -211,4 +245,27 @@ export async function sources(): Promise<SourceInfo[]> {
 export async function health(): Promise<Health> {
   const r = await fetch(`${API_BASE}/health`);
   return (await r.json()) as Health; // 503 while loading still carries a body
+}
+
+export async function guard(answer: string, ui_lang: Lang, signal?: AbortSignal): Promise<GuardResponse> {
+  const r = await fetch(`${API_BASE}/v1/guard`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ answer, ui_lang }),
+    ...(signal ? { signal } : {}),
+  });
+  return parse<GuardResponse>(r);
+}
+
+export async function receipt(text: string, ui_lang: Lang): Promise<Receipt> {
+  const r = await fetch(`${API_BASE}/v1/receipt`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, ui_lang }),
+  });
+  return parse<Receipt>(r);
+}
+
+export function receiptUrl(rc: Receipt): string {
+  return `${location.origin}${API_BASE}/v/${rc.token}?h=${rc.determinism_hash}`;
 }
