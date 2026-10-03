@@ -5,6 +5,8 @@
 * ``POST /v1/check/image`` — OCR via ``VisionClient`` then the same pipeline with ``source_modality=image``;
 * ``GET /v1/sources`` — straight from ``corpus/manifest.json``;
 * ``GET /v1/messages/{lang}`` — the UI strings (single source of truth, E-009);
+* developer gate (docs/API.md): ``GET /v1/rules``, ``POST /v1/guard``, ``X-Basira-Determinism-Hash``
+  on ``/v1/check``, and the MCP server at ``/mcp`` when ``BASIRA_MCP=1`` (docs/INTEGRATIONS.md §3.1);
 * every error is ``{"error":{"code","message_ar","message_en"}}`` (audit §5);
 * in-memory fixed-window rate limit per client IP (30/min default) with ``X-Eval-Key`` bypass (T5).
 
@@ -36,6 +38,8 @@ from fastapi.responses import JSONResponse
 from app import __version__
 from app.config import Settings
 from app.config import settings as default_settings
+from app.devgate import DevGateError, grounding_rules
+from app.guard import guard_answer
 from app.messages import load_messages, self_check_templates
 from app.pipeline import CorpusMeta, Pipeline
 from app.providers import ProviderError, make_llm, make_vision
@@ -44,7 +48,10 @@ from app.schemas import (
     CheckResponse,
     ErrorBody,
     ErrorResponse,
+    GuardRequest,
+    GuardResponse,
     HealthResponse,
+    RulesResponse,
     SourceInfo,
 )
 from app.snapshot import LAST_BOOT, load_or_build
@@ -209,6 +216,11 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     async def _api_error(_: Request, exc: ApiError) -> JSONResponse:
         return _error(exc.status, exc.code, cfg.messages_dir, **exc.vars)
 
+    @app.exception_handler(DevGateError)
+    async def _devgate_error(_: Request, exc: DevGateError) -> JSONResponse:
+        status = {"text_too_long": 413, "invalid_input": 422}.get(exc.code, 400)
+        return _error(status, exc.code, cfg.messages_dir, **exc.vars)
+
     @app.exception_handler(RequestValidationError)
     async def _validation(_: Request, exc: RequestValidationError) -> JSONResponse:
         for e in exc.errors():
@@ -279,13 +291,18 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
             429: {"model": ErrorResponse},
         },
     )
-    async def check(req: CheckRequest, request: Request) -> CheckResponse:
+    async def check(req: CheckRequest, request: Request) -> JSONResponse:
         pipeline = _guard(request)
         if len(req.text) > cfg.max_text_chars:
             raise ApiError(413, "text_too_long", max=cfg.max_text_chars)
         if not req.text.strip():
             raise ApiError(422, "invalid_input")
-        return await pipeline.check(req)
+        resp = await pipeline.check(req)
+        # Developer gate: the reproducibility contract is also a header, so proxies/log pipelines can
+        # record it without parsing the body (docs/API.md §Determinism).
+        return JSONResponse(
+            content=resp.model_dump(), headers={"X-Basira-Determinism-Hash": resp.determinism_hash}
+        )
 
     @app.post(
         "/v1/check/image",
@@ -354,9 +371,35 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
                     in_repo=False,  # data files are never committed; only the manifest is
                     records=int(records),
                     downloaded_at=s.get("downloaded_at"),
+                    sha256=str(s.get("sha256") or ""),
                 )
             )
         return out
+
+    # ------------------------------------------------------------- developer gate (docs/API.md, docs/GUARD.md)
+
+    @app.get("/v1/rules", response_model=RulesResponse)
+    async def rules(ui_lang: str = "en") -> RulesResponse:
+        """Fixed grounding rules for models/integrators (same text as the MCP `grounding_rules` tool)."""
+        return RulesResponse(**grounding_rules(ui_lang))
+
+    @app.post(
+        "/v1/guard",
+        response_model=GuardResponse,
+        responses={
+            413: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+            429: {"model": ErrorResponse},
+        },
+    )
+    async def guard(req: GuardRequest, request: Request) -> JSONResponse:
+        """Check a chatbot answer before it reaches the user: clear | flagged | no_quotes (docs/GUARD.md)."""
+        pipeline = _guard(request)
+        result = await guard_answer(pipeline, cfg, req.answer, req.ui_lang)
+        return JSONResponse(
+            content=GuardResponse(**result).model_dump(),
+            headers={"X-Basira-Determinism-Hash": str(result["determinism_hash"])},
+        )
 
     @app.get("/v1/messages/{lang}")
     async def messages(lang: str) -> dict[str, Any]:
@@ -365,6 +408,13 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         raw = json.loads((cfg.messages_dir / f"{lang}.json").read_text(encoding="utf-8"))
         raw.pop("$comment", None)
         return dict(raw)
+
+    # ------------------------------------------------------------- MCP server (docs/INTEGRATIONS.md §3.1)
+    # Opt-in (BASIRA_MCP=1). Same process, same pipeline object; without the flag /mcp is a plain 404.
+    if cfg.mcp_enabled:
+        from app.mcp_server import mount_mcp  # noqa: PLC0415  (optional extra "mcp")
+
+        mount_mcp(app, cfg)
 
     # ------------------------------------------------------------- static frontend (E-034)
     # When `frontend/dist` exists (Docker image), serve it from the same origin: no CORS, one URL,
