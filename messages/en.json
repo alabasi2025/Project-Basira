@@ -37,6 +37,8 @@
     "hadeethenc_link_only": "This hadith is listed in the Prophetic Hadiths Encyclopedia; you can read it there.",
     "many_positions": "Found at {total} places; the first {shown} are shown.",
     "ocr_mock": "Demo mode: the image text was NOT actually read; a fixed sample text was used because no vision provider is configured.",
+    "extraction_truncated": "The text contains more quotations than can be checked in one request; only the first ones were checked and the rest were not. Split the text and check again.",
+    "ocr_truncated": "The image text is longer than one request can check; only the first part was checked and the rest was not. Use a smaller image or split it.",
     "quran_fragment": "The quoted text is part of the ayah, not the whole ayah; the full ayah text is shown next to yours.",
     "diacritic_difference": "The vowel mark on one or more letters in your text differs from the source; the highlighted letters show where. Missing diacritics are not counted as a difference.",
     "claimed_ayah_mismatch": "The ayah is at {found_ref}, not at the reference given in your text ({claimed_ref}).",

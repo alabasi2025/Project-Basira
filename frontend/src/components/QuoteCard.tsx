@@ -86,6 +86,20 @@ function MatchView({ m, q, lang }: { m: Match; q: QuoteResult; lang: Lang }) {
             {m.source_text}
           </p>
         ))}
+      {m.source_segments && m.source_segments.length > 1 && (
+        <ol className="segments" aria-label={ui(lang, "segments")} data-testid="source-segments">
+          {m.source_segments.map((s) => (
+            <li key={s.source_url}>
+              <a href={s.source_url} target="_blank" rel="noopener noreferrer" dir="auto">
+                {lang === "ar" ? s.ref_label_ar : s.ref_label_en}
+              </a>
+              <p className="diff-text source-text" dir="rtl" lang="ar">
+                {s.source_text}
+              </p>
+            </li>
+          ))}
+        </ol>
+      )}
       {m.grade && (
         <p className="grade" dir="auto">
           {msg(lang, "notice", "grade_line", noticeVars("grade_line", q, lang))}
