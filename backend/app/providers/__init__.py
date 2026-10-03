@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 
+from app.english_gate import EnglishPicker
 from app.providers.base import (
     ExtractionResult,
     LLMClient,
@@ -39,6 +40,7 @@ __all__ = [
     "ProviderError",
     "VisionClient",
     "make_llm",
+    "make_picker",
     "make_vision",
     "relocate",
 ]
@@ -84,3 +86,20 @@ def make_vision(provider: str | None = None) -> VisionClient:
         )
     log.warning("unknown VISION_PROVIDER=%r → using mock", name)
     return MockVision()
+
+
+def make_picker(provider: str | None = None) -> EnglishPicker | None:
+    """English-gate picker (E-048). ``None`` = rule-only picking (deterministic, offline)."""
+    name = (provider or os.environ.get("LLM_PROVIDER", "mock")).strip().lower()
+    if name != "openai-compatible":
+        return None
+    key = os.environ.get("LLM_API_KEY", "")
+    if not key:
+        return None
+    from app.providers.openai_compat import OpenAICompatPicker  # noqa: PLC0415
+
+    return OpenAICompatPicker(
+        base_url=os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1"),
+        api_key=key,
+        model=os.environ.get("LLM_PICKER_MODEL") or os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+    )

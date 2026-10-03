@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.config import Settings
+from app.english_gate import EnglishGate
 from app.extract.anchor import detect
 from app.extract.foreign import foreign_runs
 from app.extract.rules import (
@@ -127,6 +128,7 @@ class Pipeline:
         llm: LLMClient,
         settings: Settings,
         corpus_meta: CorpusMeta,
+        english: EnglishGate | None = None,
     ) -> None:
         self.store = store
         self.retriever = retriever
@@ -136,6 +138,13 @@ class Pipeline:
         self.th = settings.thresholds
         self.msgs_ar: Messages = load_messages(settings.messages_dir, "ar")
         self.msgs_en: Messages = load_messages(settings.messages_dir, "en")
+        # English gate (docs/ENGLISH_GATE.md): candidates for non-Arabic quotes; disabled when the
+        # translations index is absent — the Arabic product never depends on it.
+        self.english = english or EnglishGate.from_path(
+            store,
+            settings.index_dir / "translations.pkl",
+            hadeethenc_link_only=(settings.hadeethenc_mode == "link"),
+        )
 
     # ------------------------------------------------------------------ public
 
@@ -200,6 +209,12 @@ class Pipeline:
             d = self._harakat_gate(q, d, carriers)
             self._quran_context_notices(d, q, carriers, rasm0_only)
             qr = self._render(i, q, d, carriers, req, extra_notices or [])
+            if q.language == "en" and self.english.enabled:
+                eg = await self.english.run(q.text)
+                qr.english_candidates = eg.candidates
+                qr.picker = eg.picker  # type: ignore[assignment]
+                if eg.candidates:
+                    qr.notice_keys.append("english_candidates")
             t_match += (time.perf_counter() - tr0) - t_retr_i
             seen_raw[key] = len(quotes)
             quotes.append(qr)

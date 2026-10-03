@@ -113,6 +113,23 @@ class ClaimedSource(BaseModel):
     parsed: dict[str, Any]
 
 
+class EnglishCandidate(BaseModel):
+    """One candidate for a non-Arabic quote (English gate, docs/ENGLISH_GATE.md). Both texts are
+    verbatim upstream strings: ``arabic_text`` is the corpus display field, ``translation_text`` the
+    approved translation (QuranEnc / HadeethEnc). Nothing is generated."""
+
+    kind: Literal["quran", "hadith"]
+    ref: dict[str, Any]
+    ref_label_ar: str
+    ref_label_en: str
+    arabic_text: str
+    translation_text: str
+    translation_source: str  # english_saheeh | english_rwwad | hadeethenc_en
+    score: float
+    source_url: str
+    selected: bool = False  # chosen by the picker (rule or model); at most one per quote
+
+
 class QuoteResult(BaseModel):
     id: str
     span: Span
@@ -132,6 +149,10 @@ class QuoteResult(BaseModel):
     external_search_links: list[Link] = Field(default_factory=list)
     segments: list[SegmentModel] = Field(default_factory=list)
     repeated_spans: list[Span] = Field(default_factory=list)  # N-1: same quote again later in the text
+    english_candidates: list[EnglishCandidate] = Field(default_factory=list)  # English gate (I7 quotes only)
+    picker: Literal["", "rule", "model", "none"] = (
+        ""  # how `selected` was decided ("" = not an English quote)
+    )
 
 
 class Flags(BaseModel):

@@ -144,3 +144,35 @@ stage has what it needs.
 python3 corpus/fetch_translations.py --verify && backend/.venv/bin/python corpus/build_index.py >/dev/null && \
 cd backend && .venv/bin/pytest -q tests/test_translations.py && cd .. && backend/.venv/bin/python eval/run_english.py --fail-under 0.9
 ```
+
+## 7. Wired into the pipeline — picker results (E-048, 2026-10-03)
+
+`backend/app/english_gate.py` runs for every quote with `language == "en"` (I7 keeps the verdict
+`needs_review/non_arabic`): candidates → cross-reference to the byte-exact Arabic record (a candidate
+without a record is dropped) → **picker** marks at most one `selected`:
+
+* **rule** (deterministic, offline): top-1 ≥ 0.9 and gap to top-2 ≥ 0.3;
+* **model** (optional, `LLM_PROVIDER=openai-compatible`): when the rule abstains, the model answers
+  `{"pick": k}` constrained to the candidate list or `0` to refuse — it can never introduce text
+  (`parse_pick`; `backend/tests/test_english_gate.py`, 17 tests).
+
+Measured with `eval/run_english_picker.py` on the 30 cases, 2 repeats each, temperature 0,
+`response_format=json_object`, endpoint host `www.genspark.ai` (model ids exactly as the API lists them):
+
+| arm | selected correct | abstained | selected WRONG | false select on negatives | unstable across repeats | wall |
+|---|---|---|---|---|---|---|
+| `rule-only` | 11/23 | 12 | **0** | **0**/7 | 0 | 0.1 s |
+| `gpt-5.4` | 21/23 | 2 | **0** | **0**/7 | 0 | 76.9 s |
+| `claude-sonnet-5-5` | 22/23 | 1 | **0** | **0**/7 | 1 | 65.8 s |
+| `claude-opus-5-5` | 22/23 | 1 | **0** | **0**/7 | 0 | 106.7 s |
+
+Reading: the deterministic rule alone resolves about half of the positives and **never** selects a
+wrong passage; adding a model roughly doubles the resolved cases while the constraint keeps *wrong =
+0* and *negatives = 0* for all three models. The one instability (`claude-sonnet-5-5`, EQ-012) flipped
+between two accepted twins of the same sentence (29:57 / 21:35) — both correct. Raw rows:
+`eval/results/english_picker.json` (git-ignored; regenerate with `make eval-english-picker
+PICKER_MODELS="gpt-5.4 claude-sonnet-5-5"`).
+
+What the UI gets per English quote: `english_candidates[]` (ref, labels, verbatim Arabic for Quran —
+HadeethEnc stays link-only per Q2 — verbatim translation, source key, score, `selected`) and
+`picker ∈ {rule, model, none}` so the screen can say *how* the choice was made.

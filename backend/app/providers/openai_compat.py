@@ -17,6 +17,7 @@ from typing import Any
 
 import httpx
 
+from app.english_gate import EnglishPicker
 from app.providers.base import (
     ExtractionResult,
     LLMClient,
@@ -26,6 +27,7 @@ from app.providers.base import (
     ProviderError,
     VisionClient,
 )
+from app.schemas import EnglishCandidate
 
 _KINDS: frozenset[str] = frozenset({"quran", "hadith_matn", "isnad", "attributed_saying", "unknown"})
 
@@ -157,3 +159,67 @@ def _parse_quotes(content: str) -> tuple[ProposedQuote, ...]:
         kind: ProposedKind = kind_raw if kind_raw in _KINDS else "unknown"
         out.append(ProposedQuote(txt, kind))
     return tuple(out)
+
+
+# --------------------------------------------------------------------------- English picker (E-048)
+
+PICK_SYSTEM = (
+    "You are a strict matcher. The user gives an English quotation and a numbered list of approved "
+    "translations (Quran ayat or hadith). Decide whether a listed translation is the SAME PASSAGE as the "
+    "quotation (same meaning, allowing a different translator's wording). If yes, answer with its number; "
+    "when several candidates are the same passage (duplicate entries, or adjacent ayat with the same "
+    "wording), answer the LOWEST number among them. If no candidate is the same passage, or you are not "
+    'sure, answer 0. Never explain, never quote, never add text. Reply with JSON only: {"pick": <integer>}'
+)
+
+
+class OpenAICompatPicker(EnglishPicker):
+    """Model-backed chooser for the English gate: constrained to an index into the candidate list.
+
+    The model never sees the Arabic corpus, never produces text that reaches the user; its only effect
+    is which *approved* translation (if any) is marked ``selected``. Any failure → ``None`` (refuse).
+    """
+
+    def __init__(self, *, base_url: str, api_key: str, model: str, timeout_s: float = 12.0) -> None:
+        if not api_key:
+            raise ProviderError("LLM_API_KEY missing")
+        self.name = f"openai-compatible:{model}"
+        self._url = base_url.rstrip("/") + "/chat/completions"
+        self._headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        self._model = model
+        self._timeout = timeout_s
+
+    @staticmethod
+    def prompt(quote: str, translations: list[str]) -> str:
+        lines = [f"QUOTATION: {quote}", "", "CANDIDATES:"]
+        for i, t in enumerate(translations, 1):
+            lines.append(f"{i}. {t}")
+        return "\n".join(lines)
+
+    async def pick(self, quote: str, candidates: list[EnglishCandidate]) -> int | None:
+        if not candidates:
+            return None
+        texts = [c.translation_text for c in candidates]
+        body: dict[str, Any] = {
+            "model": self._model,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": PICK_SYSTEM},
+                {"role": "user", "content": self.prompt(quote, texts)},
+            ],
+        }
+        content = await _post(self._url, self._headers, body, self._timeout)
+        return parse_pick(content, len(candidates))
+
+
+def parse_pick(content: str, n: int) -> int | None:
+    """``{"pick": k}`` with 1 ≤ k ≤ n → k-1; anything else (0, out of range, garbage) → None."""
+    try:
+        obj = json.loads(content)
+    except ValueError:
+        return None
+    k = obj.get("pick") if isinstance(obj, dict) else None
+    if isinstance(k, bool) or not isinstance(k, int):
+        return None
+    return k - 1 if 1 <= k <= n else None
