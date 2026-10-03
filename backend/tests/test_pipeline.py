@@ -369,3 +369,73 @@ async def test_multi_ayah_quote_carries_one_verbatim_segment_per_ayah(pipeline: 
         assert seg.source_url.startswith("https://quranpedia.net/")
     single = await run(pipeline, "قال تعالى: ﴿إن الله مع الصابرين﴾")
     assert single.quotes[0].matches[0].source_segments == []
+
+
+# ---- B06: repeated verbatim passages and impossible references ------------------------------------
+
+
+async def test_claimed_ref_at_a_later_repetition_is_not_a_mismatch(pipeline: Pipeline) -> None:
+    """The refrain of سورة الرحمن occurs 31 times; «[الرحمن: 77]» is a correct reference for it (B06)."""
+    r = await run(pipeline, "قال تعالى: ﴿فبأي آلاء ربكما تكذبان﴾ [الرحمن: 77]")
+    q = r.quotes[0]
+    assert q.status == "found" and q.claimed_source_mismatch is False
+    assert "claimed_ayah_mismatch" not in q.notice_keys
+    wrong = await run(pipeline, "قال تعالى: ﴿فبأي آلاء ربكما تكذبان﴾ [البقرة: 5]")
+    assert wrong.quotes[0].claimed_source_mismatch is True
+    assert "claimed_ayah_mismatch" in wrong.quotes[0].notice_keys
+    assert wrong.quotes[0].status == "found"  # I8: the notice never changes the status
+
+
+async def test_impossible_claimed_reference_gets_its_own_notice(pipeline: Pipeline) -> None:
+    r = await run(pipeline, "قال تعالى: ﴿قل هو الله أحد﴾ [الإخلاص: 1-999]")
+    q = r.quotes[0]
+    assert q.status == "found" and "claimed_ref_invalid" in q.notice_keys
+    assert q.claimed_source_mismatch is False  # the text IS at 112:1; only the range is impossible
+    ok = await run(pipeline, "قال تعالى: ﴿قل هو الله أحد﴾ [الإخلاص: 1]")
+    assert "claimed_ref_invalid" not in ok.quotes[0].notice_keys
+    beyond = await run(pipeline, "قال تعالى: ﴿قل هو الله أحد﴾ [البقرة: 300]")
+    assert {"claimed_ref_invalid", "claimed_ayah_mismatch"} <= set(beyond.quotes[0].notice_keys)
+    for lang in ("ar", "en"):
+        from app.messages import load_messages  # noqa: PLC0415
+
+        m = load_messages(pipeline.settings.messages_dir, lang)
+        assert scan_forbidden(m.get("notice", "claimed_ref_invalid", claimed_ref="x")) == []
+
+
+def test_ayah_counts_are_the_kufic_count() -> None:
+    from app.quran_meta import AYAH_COUNTS, ayah_count, claimed_ref_possible  # noqa: PLC0415
+
+    assert len(AYAH_COUNTS) == 114 and sum(AYAH_COUNTS) == 6236
+    assert (ayah_count(1), ayah_count(2), ayah_count(55), ayah_count(112), ayah_count(114)) == (
+        7,
+        286,
+        78,
+        4,
+        6,
+    )
+    assert ayah_count(0) is None and ayah_count(115) is None
+    assert (
+        claimed_ref_possible(55, 77, None)
+        and claimed_ref_possible(2, 1, 5)
+        and claimed_ref_possible(112, 1, 4)
+    )
+    assert not claimed_ref_possible(112, 1, 999) and not claimed_ref_possible(2, 300, None)
+    assert not claimed_ref_possible(2, 5, 1) and not claimed_ref_possible(115, 1, None)
+
+
+def test_ayah_counts_equal_tanzil_when_the_corpus_is_present() -> None:
+    """The table is data, not text — and it must equal the pinned Tanzil file, surah by surah."""
+    from collections import Counter  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    from app.quran_meta import AYAH_COUNTS  # noqa: PLC0415
+
+    p = Path(__file__).resolve().parents[2] / "corpus" / "data" / "tanzil-uthmani.txt"
+    if not p.exists():
+        pytest.skip("full Tanzil file not fetched")
+    c: Counter[int] = Counter()
+    for line in p.read_text(encoding="utf-8").splitlines():
+        parts = line.split("|")
+        if len(parts) >= 3 and parts[0].isdigit():
+            c[int(parts[0])] += 1
+    assert tuple(c[i] for i in range(1, 115)) == AYAH_COUNTS
