@@ -80,7 +80,7 @@ export default function Settings({ lang }: { lang: Lang }) {
         </div>
       </header>
 
-      <div className="wrap dev-grid">
+      <div className="wrap dev-grid set-grid">
         <section aria-labelledby="sk" data-reveal className="set-card">
           <h2 id="sk">{t(lang, "set_key_label")}</h2>
           <div className="set-field">

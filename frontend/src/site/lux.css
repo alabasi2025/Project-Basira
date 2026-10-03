@@ -2012,7 +2012,11 @@ body {
 }
 
 /* ------------------------------------------------------------------ settings (BYOK, E-051) */
-.set-card { display: grid; gap: 1.1rem; }
+.set-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2rem; align-items: start; }
+@media (min-width: 960px) { .set-grid { grid-template-columns: minmax(360px, 2fr) minmax(0, 3fr); } }
+.set-card { display: grid; gap: 1.1rem; align-content: start; }
+.set-note { max-width: none; }
+.set-table td, .set-table th { white-space: normal; }
 .set-field { display: grid; gap: 0.4rem; }
 .set-field label { font-weight: 700; font-size: 0.92rem; color: var(--lux-text-2); }
 .set-input-row { display: flex; gap: 0.5rem; align-items: stretch; }
@@ -2041,7 +2045,7 @@ select.set-input { font-family: var(--bs-font-ui); }
 .set-table tr[data-selected] td { background: rgb(46 242 194 / 0.08); }
 .set-vendor { font-size: 0.8rem; color: var(--lux-text-2); margin-inline-start: 0.35rem; }
 .set-default { margin-inline-start: 0.5rem; }
-.set-note { margin: 0.35rem 0 0; font-size: 0.82rem; color: var(--lux-text-2); max-width: 36ch; }
+.set-note { margin: 0.35rem 0 0; font-size: 0.82rem; color: var(--lux-text-2); }
 @media (max-width: 720px) {
   .set-table th:nth-child(2), .set-table td:nth-child(2) { display: none; }
 }
