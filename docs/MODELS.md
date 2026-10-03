@@ -1,6 +1,6 @@
 # Models — measured on Basira's real tasks (2026-10-03)
 
-**Where this is used:** `/settings` (BYOK) and `GET /v1/models`. The catalog lives in `backend/app/byok.py`
+**Where this is used:** `/settings` (server-side model config, E-051) and `GET /v1/models`. The catalog lives in `backend/app/byok.py`
 and these numbers are the only source for what the UI shows. Nothing here is a vendor claim.
 
 **How measured.** Owner's Genspark proxy key, `https://www.genspark.ai/api/llm_proxy/v1`, temperature 0,
@@ -8,7 +8,7 @@ and these numbers are the only source for what the UI shows. Nothing here is a v
 Six extraction inputs (4 marked Arabic quotes incl. a foreign token inside an ayah, 1 unmarked saying,
 1 plain text, 1 English quote), 6 parallel calls per model. "exact" = returned exactly the gold span list;
 **every model returned only verbatim substrings** (no rewriting). OCR: `docs/manual-test/images/01_ayah_typo.png`.
-Script: `/tmp/bench/bench.py` (to be committed as `scripts/bench_models.py`).
+Script: `scripts/bench_models.py` (needs `GSK_TEST_KEY` + `OPENAI_BASE_URL` in the environment).
 
 | model | cost× | exact /6 | p50 ms | max ms | OCR faithful | OCR ms | verdict |
 |---|---|---|---|---|---|---|---|
@@ -37,4 +37,4 @@ The "unmarked saying" miss (الدين المعاملة, no brackets) is **not a
 detect it; models were told to list only passages *presented* as quotes. 5/6 therefore equals 6/6 in product terms.
 
 **Key point for judges:** the model choice never changes a verdict on a bracketed quote — the determinism hash
-is identical with or without BYOK (`backend/tests/test_byok.py::test_check_same_verdict_and_hash_with_or_without_byok`).
+is identical with the mock or a configured model (`backend/tests/test_byok.py::test_check_headers_are_ignored_and_verdict_is_model_independent`).

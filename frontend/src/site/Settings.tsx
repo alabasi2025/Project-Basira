@@ -1,30 +1,25 @@
-/** /settings — bring-your-own Genspark key + model choice (E-051).
+/** /settings — Genspark key (saved once on the server) + model choice (E-051).
  *
- *  One narrow column, three short blocks: key → model list → save. The model list is a compact radio
- *  list (3 recommended by default, "show all" expands); the selected row reveals its one-line measured
- *  note. Numbers come from /v1/models (measured, backend-owned) — nothing is typed here.
- *
- *  The key lives in localStorage only and travels as a request header; the server uses it once and never
- *  stores, logs or echoes it. The deterministic verdict never depends on the model. */
+ *  Compact single column, no hero. The key is sent once to PUT /v1/models/config, verified upstream and
+ *  stored server-side; the browser keeps nothing and never sends it again. Changing the model later does
+ *  not require re-entering the key. Catalog numbers come from /v1/models (measured, backend-owned). */
 
 import { useEffect, useState } from "react";
-import { getByok, models, setByok, verifyKey, type Byok, type Lang, type ModelInfo, type VerifyResult } from "../api";
+import { clearModelConfig, models, saveModelConfig, type Lang, type ModelConfigState, type ModelInfo, type SaveResult } from "../api";
 import { Icon } from "../brand";
-import { LiveBadge } from "./Shell";
 import { numfmt, t } from "./strings";
 
 const RECOMMENDED = 3;
 
 export default function Settings({ lang }: { lang: Lang }) {
   const nf = numfmt(lang);
-  const saved = getByok();
-  const [key, setKey] = useState(saved?.key ?? "");
-  const [model, setModel] = useState(saved?.model ?? "");
-  const [catalog, setCatalog] = useState<ModelInfo[] | null>(null);
+  const [catalog, setCatalog] = useState<ModelInfo[]>([]);
+  const [config, setConfig] = useState<ModelConfigState | null>(null);
+  const [key, setKey] = useState("");
+  const [model, setModel] = useState("");
   const [all, setAll] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<VerifyResult | "error" | null>(null);
-  const [flash, setFlash] = useState<"saved" | "cleared" | null>(null);
+  const [result, setResult] = useState<SaveResult | "error" | "cleared" | null>(null);
   const [show, setShow] = useState(false);
 
   useEffect(() => {
@@ -33,66 +28,76 @@ export default function Settings({ lang }: { lang: Lang }) {
       .then((c) => {
         if (!alive) return;
         setCatalog(c.models);
-        if (!model) setModel(c.default);
+        setConfig(c.config);
+        setModel(c.config.model ?? c.default);
       })
-      .catch(() => alive && setCatalog([]));
+      .catch(() => alive && setConfig({ configured: false, model: null, key_masked: null, provider: "" }));
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const current: Byok = { key: key.trim(), model };
-  const canVerify = current.key.length >= 16 && !!model && !busy;
-  const active = getByok();
-  const list = catalog ?? [];
-  const selectedIdx = list.findIndex((m) => m.id === model);
-  const visible = all ? list : list.slice(0, Math.max(RECOMMENDED, selectedIdx + 1));
-  const reset = () => {
-    setResult(null);
-    setFlash(null);
-  };
+  const configured = !!config?.configured;
+  const keyOk = key.trim().length >= 16;
+  const canSave = !busy && !!model && (keyOk || configured);
+  const selectedIdx = catalog.findIndex((m) => m.id === model);
+  const visible = all ? catalog : catalog.slice(0, Math.max(RECOMMENDED, selectedIdx + 1));
 
-  async function onVerify() {
+  async function onSave() {
     setBusy(true);
     setResult(null);
     try {
-      setResult(await verifyKey(current));
+      const body = keyOk ? { api_key: key.trim(), model } : { model };
+      const r = await saveModelConfig(body);
+      setResult(r);
+      setConfig(r.config);
+      if (r.saved) setKey("");
     } catch {
       setResult("error");
     } finally {
       setBusy(false);
     }
   }
-  function onSave() {
-    setByok(current);
-    setFlash("saved");
-  }
-  function onClear() {
-    setByok(null);
-    setKey("");
-    setResult(null);
-    setFlash("cleared");
+  async function onClear() {
+    setBusy(true);
+    try {
+      const r = await clearModelConfig();
+      setConfig(r.config);
+      setResult("cleared");
+      setKey("");
+    } catch {
+      setResult("error");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
-    <main id="main" className="page">
-      <header className="page-head">
-        <div className="wrap set-wrap">
-          <p className="kicker">
-            <LiveBadge lang={lang} /> BYOK · Genspark
-          </p>
-          <h1>{t(lang, "set_title")}</h1>
-          <p>{t(lang, "set_sub")}</p>
-        </div>
-      </header>
+    <main id="main" className="page set-page">
+      <div className="wrap set-wrap">
+        <h1 className="set-h1">{t(lang, "set_title")}</h1>
 
-      <div className="wrap set-wrap set-stack">
-        {/* 1 — key */}
+        {/* status line */}
+        <p className="set-state" role="status" aria-live="polite">
+          {config === null ? (
+            "…"
+          ) : configured ? (
+            <>
+              <span className="tag tag--live">{t(lang, "set_active")}</span> <code dir="ltr">{config.model}</code>
+              <span className="set-vendor" dir="ltr">
+                · {t(lang, "set_key_label")} {config.key_masked}
+              </span>
+            </>
+          ) : (
+            <span className="tag tag--soon">{t(lang, "set_not_configured")}</span>
+          )}
+        </p>
+
+        {/* key */}
         <section className="set-block" aria-labelledby="sk">
-          <h2 id="sk">
-            <span className="set-step">1</span> {t(lang, "set_key_label")}
-          </h2>
+          <label id="sk" htmlFor="byok-key" className="set-label">
+            {t(lang, "set_key_label")}
+          </label>
           <div className="set-input-row">
             <input
               id="byok-key"
@@ -101,37 +106,25 @@ export default function Settings({ lang }: { lang: Lang }) {
               autoComplete="off"
               spellCheck={false}
               dir="ltr"
-              placeholder="gsk-…"
-              aria-label={t(lang, "set_key_label")}
+              placeholder={configured ? t(lang, "set_key_keep") : "gsk-…"}
               value={key}
               onChange={(e) => {
                 setKey(e.target.value);
-                reset();
+                setResult(null);
               }}
             />
             <button type="button" className="set-icon-btn" onClick={() => setShow((v) => !v)} aria-pressed={show} aria-label={t(lang, "set_key_label")}>
               <Icon name={show ? "privacy-nostore" : "info"} size={18} />
             </button>
-            <button type="button" className="btn-lux btn-lux--sm" disabled={!canVerify} onClick={onVerify}>
-              {busy ? t(lang, "set_verifying") : t(lang, "set_verify")}
-            </button>
           </div>
           <p className="set-help">{t(lang, "set_key_help")}</p>
-          <div className="set-status" role="status" aria-live="polite">
-            {result && result !== "error" && result.ok && (
-              <p className="set-ok">{t(lang, "set_ok", { model: result.model, ms: nf.format(result.latency_ms) })}</p>
-            )}
-            {result && result !== "error" && !result.ok && <p className="set-fail">{t(lang, `set_fail_${result.reason}` as const)}</p>}
-            {result === "error" && <p className="set-fail">{t(lang, "set_fail_transport")}</p>}
-          </div>
         </section>
 
-        {/* 2 — model list */}
+        {/* model */}
         <section className="set-block" aria-labelledby="sm">
-          <h2 id="sm">
-            <span className="set-step">2</span> {t(lang, "set_model_label")}
-          </h2>
-          <p className="set-help">{t(lang, "set_cat_sub")}</p>
+          <p id="sm" className="set-label">
+            {t(lang, "set_model_label")}
+          </p>
           <ul className="set-list" role="radiogroup" aria-labelledby="sm">
             {visible.map((m) => {
               const sel = m.id === model;
@@ -145,7 +138,7 @@ export default function Settings({ lang }: { lang: Lang }) {
                     data-selected={sel || undefined}
                     onClick={() => {
                       setModel(m.id);
-                      reset();
+                      setResult(null);
                     }}
                   >
                     <span className="set-radio" aria-hidden="true" />
@@ -170,41 +163,37 @@ export default function Settings({ lang }: { lang: Lang }) {
               );
             })}
           </ul>
-          {list.length > RECOMMENDED && (
+          {catalog.length > RECOMMENDED && (
             <button type="button" className="set-more" onClick={() => setAll((v) => !v)} aria-expanded={all}>
               <Icon name="chevron-down" size={16} />
-              {all ? t(lang, "set_less") : t(lang, "set_more", { n: nf.format(list.length) })}
+              {all ? t(lang, "set_less") : t(lang, "set_more", { n: nf.format(catalog.length) })}
             </button>
           )}
+          <p className="set-help">{t(lang, "set_cat_sub")}</p>
         </section>
 
-        {/* 3 — save */}
-        <section className="set-block" aria-labelledby="ss">
-          <h2 id="ss">
-            <span className="set-step">3</span> {t(lang, "set_save")}
-          </h2>
-          <div className="set-actions">
-            <button type="button" className="btn-lux" disabled={!current.key || busy} onClick={onSave}>
-              <Icon name="shield-verify" size={20} />
-              {t(lang, "set_save")}
+        {/* actions */}
+        <div className="set-actions">
+          <button type="button" className="btn-lux" disabled={!canSave} onClick={onSave}>
+            <Icon name="shield-verify" size={20} />
+            {busy ? t(lang, "set_verifying") : t(lang, "set_save")}
+          </button>
+          {configured && (
+            <button type="button" className="btn-lux btn-lux--sm" disabled={busy} onClick={onClear}>
+              {t(lang, "set_clear")}
             </button>
-            {active && (
-              <button type="button" className="btn-lux btn-lux--sm" onClick={onClear}>
-                {t(lang, "set_clear")}
-              </button>
-            )}
-          </div>
-          <div className="set-status" role="status" aria-live="polite">
-            {flash === "saved" && <p className="set-ok">{t(lang, "set_saved")}</p>}
-            {flash === "cleared" && <p>{t(lang, "set_cleared")}</p>}
-            {active && !flash && (
-              <p className="set-active">
-                {t(lang, "set_active")}: <code dir="ltr">{active.model || "—"}</code>
-              </p>
-            )}
-          </div>
-          <p className="set-help">{t(lang, "set_note_rules")}</p>
-        </section>
+          )}
+        </div>
+        <div className="set-status" role="status" aria-live="polite">
+          {result && result !== "error" && result !== "cleared" && result.saved && (
+            <p className="set-ok">{t(lang, "set_saved_ok", { model: result.model, ms: nf.format(result.latency_ms) })}</p>
+          )}
+          {result && result !== "error" && result !== "cleared" && !result.saved && (
+            <p className="set-fail">{t(lang, `set_fail_${result.reason}` as const)}</p>
+          )}
+          {result === "error" && <p className="set-fail">{t(lang, "set_fail_transport")}</p>}
+          {result === "cleared" && <p>{t(lang, "set_cleared")}</p>}
+        </div>
       </div>
     </main>
   );

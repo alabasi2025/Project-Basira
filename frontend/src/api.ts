@@ -97,50 +97,9 @@ export interface Health {
 
 export const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 
-/* ---------------------------------------------------------------- BYOK (E-051)
- * The visitor's own model key lives in localStorage only and travels as request headers.
- * The server uses it for that one request and never stores, logs or echoes it. */
-export const BYOK_KEY = "basira.byok.key";
-export const BYOK_MODEL = "basira.byok.model";
-
-export interface Byok {
-  key: string;
-  model: string;
-}
-
-export function getByok(): Byok | null {
-  try {
-    const key = localStorage.getItem(BYOK_KEY) ?? "";
-    const model = localStorage.getItem(BYOK_MODEL) ?? "";
-    return key ? { key, model } : null;
-  } catch {
-    return null;
-  }
-}
-
-export function setByok(b: Byok | null): void {
-  try {
-    if (!b) {
-      localStorage.removeItem(BYOK_KEY);
-      localStorage.removeItem(BYOK_MODEL);
-    } else {
-      localStorage.setItem(BYOK_KEY, b.key);
-      localStorage.setItem(BYOK_MODEL, b.model);
-    }
-  } catch {
-    /* private mode: nothing persists, which is fine */
-  }
-  window.dispatchEvent(new Event("basira:byok"));
-}
-
-export function byokHeaders(override?: Byok | null): Record<string, string> {
-  const b = override === undefined ? getByok() : override;
-  if (!b) return {};
-  const h: Record<string, string> = { "X-Basira-LLM-Key": b.key };
-  if (b.model) h["X-Basira-LLM-Model"] = b.model;
-  return h;
-}
-
+/* ---------------------------------------------------------------- model config (E-051)
+ * The Genspark key is entered once on /settings and saved on the SERVER. The browser never keeps it and
+ * never sends it with checks; /v1/models only reports a masked tail. */
 export interface ModelInfo {
   id: string;
   label: string;
@@ -158,20 +117,43 @@ export interface ModelInfo {
   default: boolean;
 }
 
+export interface ModelConfigState {
+  configured: boolean;
+  model: string | null;
+  key_masked: string | null;
+  provider: string;
+}
+
 export interface ModelsCatalog {
   default: string;
   models: ModelInfo[];
+  config: ModelConfigState;
 }
 
-export type VerifyResult = { ok: true; model: string; latency_ms: number } | { ok: false; reason: "auth" | "model" | "transport"; latency_ms?: number };
+export type SaveResult =
+  | { saved: true; ok: true; model: string; latency_ms: number; config: ModelConfigState }
+  | { saved: false; ok: false; reason: "auth" | "model" | "transport"; latency_ms?: number; config: ModelConfigState };
 
 export async function models(): Promise<ModelsCatalog> {
   return parse<ModelsCatalog>(await fetch(`${API_BASE}/v1/models`));
 }
 
-export async function verifyKey(b: Byok): Promise<VerifyResult> {
-  const r = await fetch(`${API_BASE}/v1/models/verify`, { method: "POST", headers: byokHeaders(b) });
-  return parse<VerifyResult>(r);
+export async function saveModelConfig(body: { api_key?: string; model: string }): Promise<SaveResult> {
+  const r = await fetch(`${API_BASE}/v1/models/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (r.ok || r.status === 400) {
+    const j = (await r.json()) as SaveResult | ApiError;
+    if ("error" in j) throw new BasiraError(r.status, j);
+    return j;
+  }
+  return parse<SaveResult>(r);
+}
+
+export async function clearModelConfig(): Promise<{ saved: false; config: ModelConfigState }> {
+  return parse(await fetch(`${API_BASE}/v1/models/config`, { method: "DELETE" }));
 }
 
 export class BasiraError extends Error {
@@ -198,7 +180,7 @@ async function parse<T>(r: Response): Promise<T> {
 export async function check(text: string, ui_lang: Lang, signal?: AbortSignal): Promise<CheckResponse> {
   const r = await fetch(`${API_BASE}/v1/check`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...byokHeaders() },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, ui_lang, source_modality: "text", options: { max_candidates: 3 } }),
     ...(signal ? { signal } : {}),
   });
@@ -209,7 +191,7 @@ export async function checkImage(file: File, ui_lang: Lang, signal?: AbortSignal
   const fd = new FormData();
   fd.append("image", file);
   fd.append("ui_lang", ui_lang);
-  const r = await fetch(`${API_BASE}/v1/check/image`, { method: "POST", headers: byokHeaders(), body: fd, ...(signal ? { signal } : {}) });
+  const r = await fetch(`${API_BASE}/v1/check/image`, { method: "POST", body: fd, ...(signal ? { signal } : {}) });
   return parse<CheckResponse>(r);
 }
 
