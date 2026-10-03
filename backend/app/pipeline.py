@@ -49,6 +49,7 @@ from app.match.window import WindowHit, fuzzy_search, fuzzy_search_surah_stream
 from app.messages import Messages, load_messages
 from app.normalize import tokenize
 from app.providers import LLMClient, ProviderError, relocate
+from app.quran_meta import claimed_ref_possible
 from app.retrieve.index import Retriever
 from app.schemas import (
     CheckRequest,
@@ -231,6 +232,7 @@ class Pipeline:
             d = decide(facts, evidence, self.th)
             d = self._foreign_gate(q, d)
             d = self._harakat_gate(q, d, carriers)
+            self._claimed_ref_notice(d, facts)
             self._quran_context_notices(d, q, carriers, rasm0_only)
             qr = self._render(i, q, d, carriers, req, extra_notices or [])
             if q.language == "en" and self.english.enabled:
@@ -431,13 +433,20 @@ class Pipeline:
         if isinstance(parsed, dict) and "surah" in parsed and "ayah" in parsed:
             qref = (int(parsed["surah"]), int(parsed["ayah"]))
             ayah_to = int(parsed["ayah_to"]) if parsed.get("ayah_to") else None
-        # I10 — first ayah of the best strict-exact Quran winner (evidence is already ordered)
+        # I10 — first ayah of the best strict-exact Quran winner (evidence is already ordered).
+        # B06: a verbatim passage can occur at several places (e.g. the refrain of سورة الرحمن); when the
+        # author's claimed ayah is one of them, THAT position is the matched ref — a correct repeated
+        # reference is never reported as a mismatch.
         mref = None
         for e in evidence or ():
             if e.corpus == "tanzil" and e.is_exact and e.strict_ok:
                 r = self.store.records[e.rec_idx]
-                mref = (r.surah, r.ayah)
-                break
+                here = (r.surah, r.ayah)
+                if mref is None:
+                    mref = here
+                if qref is not None and here[0] == qref[0] and qref[1] <= here[1] <= (ayah_to or qref[1]):
+                    mref = here
+                    break
         return QuoteFacts(
             n_tokens=len(q.tokens),
             language=q.language,
@@ -450,6 +459,16 @@ class Pipeline:
             claimed_ayah_to=ayah_to,
             matched_quran_ref=mref,
         )
+
+    @staticmethod
+    def _claimed_ref_notice(d: Decision, facts: QuoteFacts) -> None:
+        """B06: an impossible claimed reference («الإخلاص 1-999», a surah with fewer ayat, a backwards range)
+        gets its own notice; the status is untouched (I8) and the mismatch logic is left alone."""
+        c = facts.claimed_quran_ref
+        if c is None or claimed_ref_possible(c[0], c[1], facts.claimed_ayah_to):
+            return
+        if "claimed_ref_invalid" not in d.notice_keys:
+            d.notice_keys.append("claimed_ref_invalid")
 
     def _quran_context_notices(
         self, d: Decision, q: _Quote, carriers: dict[int, ExactHit | WindowHit], rasm0_only: set[int]
