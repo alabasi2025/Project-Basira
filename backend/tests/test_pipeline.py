@@ -289,3 +289,35 @@ async def test_deterministic_output(pipeline: Pipeline) -> None:
     b = await run(pipeline, "قال تعالى: إن الله علي كل شيء قدير. وقال ﷺ: «إنما الأعمال بالنيات»")
     strip = lambda r: r.model_dump(exclude={"request_id", "timings_ms"})  # noqa: E731
     assert strip(a) == strip(b)
+
+
+# ---- B05: an isnad / attribution with no matn is not a verdict on any text -------------------
+
+
+async def test_attribution_without_matn_is_needs_review_not_not_found(pipeline: Pipeline) -> None:
+    r = await run(pipeline, "قال ﷺ: «رواه البخاري ومسلم»")
+    q = r.quotes[0]
+    assert q.status == "needs_review" and q.review_reason == "attribution_only"
+    assert q.message_key == "needs_review_attribution_only"
+    assert q.matches == [] and q.external_search_links == []
+    assert scan_forbidden(r.disclaimer_key) == []
+
+
+async def test_isnad_without_matn_is_needs_review_not_not_found(pipeline: Pipeline) -> None:
+    r = await run(pipeline, "عن أبي هريرة رضي الله عنه قال: قال رسول الله صلى الله عليه وسلم:")
+    assert r.quotes, "the chain is still extracted as a quote"
+    q = r.quotes[0]
+    assert q.status == "needs_review" and q.review_reason == "attribution_only"
+    assert q.matches == [] and q.message_key == "needs_review_attribution_only"
+
+
+async def test_isnad_that_is_verbatim_in_a_record_stays_found(pipeline: Pipeline) -> None:
+    """OHD records carry their isnad; a chain that IS in the record is literal text and stays `found`
+    (V6 proves it). B05 only rewords verdicts that would otherwise judge an absent matn."""
+    r = await run(pipeline, "حدثنا عبد الله بن يوسف قال أخبرنا مالك عن نافع عن ابن عمر")
+    assert r.quotes[0].status == "found" and r.quotes[0].matches[0].ref["book"] == "sahih_al-bukhari"
+
+
+async def test_isnad_with_matn_is_untouched_by_b05(pipeline: Pipeline) -> None:
+    r = await run(pipeline, "قال رسول الله ﷺ: «إنما الأعمال بالنيات» رواه البخاري")
+    assert r.quotes[0].status == "found" and r.quotes[0].review_reason is None

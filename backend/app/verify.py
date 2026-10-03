@@ -24,16 +24,25 @@ the closest record). Both increment ``validator_rejections``. Nothing is logged 
       matcher's hits, scores or carriers. A quote of a vocalised text is compared on letters only
       (tashkeel is V-independent and handled by I14 upstream).
 
+B05 (wording, not a check): a quote that is only an attribution («رواه البخاري», «متفق عليه») or only
+a narration chain that stops before any matn is never reported ``not_found`` / ``partial_match`` —
+«لم يوجد في مصادرنا» would read as a verdict on something that is not a text. It becomes
+``needs_review`` / ``attribution_only`` with a neutral message asking for the matn. A verbatim
+``found`` is left alone (it is a true statement about the words).
+
 The validator is deliberately independent from the pipeline: it re-derives truth from the
 Store, not from any intermediate object.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
+from app.extract.rules import parse_claimed_source
+from app.extract.segments import _NARRATOR  # single source of truth for the isnad shape (read-only use)
 from app.messages import load_messages, scan_forbidden
-from app.normalize import strict_tokens
+from app.normalize import loose_tokens, strict_tokens
 from app.schemas import CheckResponse, Match, QuoteResult
 from app.store import Record, Store
 
@@ -86,6 +95,143 @@ def _our_strings(q: QuoteResult, messages_dir: Path) -> list[str]:
         out.append(m.ref_label_en)
         out.extend(m.diff_kinds)
     return out
+
+
+# --------------------------------------------------------------------------- B05 attribution-only wording
+
+_QUOTE_MARKS = "«»\"“”‹›﴾﴿()[]'’"
+_BRACKETED = re.compile(r"«([^«»]+)»|“([^“”]+)”|\"([^\"]+)\"|﴿([^﴾﴿]+)﴾")
+_ISNAD_TAIL = re.compile(r"[\s:：،,.؛;\-–]+$")
+# Loose-token phrases that may follow a chain without being a matn: honorifics and bare reporting verbs.
+_CHAIN_FILLER: frozenset[tuple[str, ...]] = frozenset(
+    {
+        ("صلي", "الله", "عليه", "وسلم"),
+        ("صلي", "الله", "عليه", "واله", "وسلم"),
+        ("عليه", "الصلاه", "والسلام"),
+        ("عليه", "السلام"),
+        ("رضي", "الله", "عنه"),
+        ("رضي", "الله", "عنها"),
+        ("رضي", "الله", "عنهم"),
+        ("رضي", "الله", "عنهما"),
+        ("قال",),
+        ("قالت",),
+        ("يقول",),
+        ("انه", "قال"),
+        ("ان", "رسول", "الله"),
+        ("ان", "النبي"),
+        ("رسول", "الله"),
+        ("النبي",),
+        ("سمعت",),
+    }
+)
+_CHAIN_LINK = re.compile(r"^(?:حدثنا|حدثني|أخبرنا|أخبرني|عن|وعن|ثنا|نا|أنا|قال)\s+")
+# A pure chain: «حدثنا A قال أخبرنا B عن C عن D [قال]» — every token is either a link word, a reporting
+# verb, an honorific, a name particle («بن», «ابن», «أبي», «أبو», «أم») or a name; it never reaches a matn.
+_CHAIN_START = ("حدثنا", "حدثني", "اخبرنا", "اخبرني", "ثنا", "انا", "عن", "وعن")
+_CHAIN_WORDS = frozenset(
+    {*_CHAIN_START, "قال", "قالت", "يقول", "سمعت", "بن", "ابن", "ابي", "ابو", "ام", "مولي", "ان", "انه", "و"}
+)
+_MAX_CHAIN_TOKENS = 40
+
+
+def _letters(s: str) -> int:
+    return sum(1 for ch in s if ch.isalpha())
+
+
+def _only_filler(rest: str) -> bool:
+    """True when ``rest`` is nothing but honorifics / reporting verbs (no matn words)."""
+    toks = loose_tokens(rest)
+    i = 0
+    while i < len(toks):
+        for n in (5, 4, 3, 2, 1):
+            if tuple(toks[i : i + n]) in _CHAIN_FILLER:
+                i += n
+                break
+        else:
+            return False
+    return True
+
+
+def attribution_only_kind(quoted_text: str) -> str | None:
+    """«رواه البخاري» / «متفق عليه» / «أخرجه مسلم في صحيحه» → "attribution";
+    «عن أبي هريرة رضي الله عنه قال: قال رسول الله ﷺ:» or «حدثنا … عن … عن ابن عمر» (a chain that stops
+    before any matn) → "isnad"; anything with words of its own → None. Looks only at the quote."""
+    inner = _quote_inner(quoted_text)
+    if not inner:
+        return None
+    if _is_bare_attribution(inner):
+        return "attribution"
+    if len(loose_tokens(inner)) >= 3 and (_chain_then_filler(inner) or _pure_chain(inner)):
+        return "isnad"
+    return None
+
+
+def _quote_inner(quoted_text: str) -> str:
+    """The text inside the first bracket pair when the extractor kept an introducer («قال ﷺ: «…»»);
+    otherwise the quote with edge marks stripped."""
+    m = _BRACKETED.search(quoted_text)
+    if m is not None:
+        return next(g for g in m.groups() if g is not None).strip()
+    return quoted_text.strip().strip(_QUOTE_MARKS).strip()
+
+
+def _is_bare_attribution(inner: str) -> bool:
+    claim = parse_claimed_source(inner)
+    if claim is None:
+        return False
+    raw = str(claim.get("raw", ""))
+    rest = inner.replace(raw, " ", 1) if raw else inner
+    parsed = claim.get("parsed", {})
+    return _letters(rest) <= 2 and bool(parsed.get("books") or parsed.get("muttafaq"))
+
+
+def _chain_then_filler(inner: str) -> bool:
+    """Peel narrator links («حدثنا X», «عن Y», «قال») from the left; an isnad is left with filler only."""
+    cur = inner
+    consumed = False
+    for _ in range(12):
+        m = _NARRATOR.match(cur)
+        if m is None or m.end() == 0:
+            break
+        consumed = True
+        cur = _ISNAD_TAIL.sub("", cur[m.end() :]).lstrip()
+        if _only_filler(cur):
+            return True
+        cur2 = re.sub(r"^(?:قال|قالت)\s+", "", cur)  # «حدثنا A قال حدثنا B …»
+        if cur2 == cur and not _CHAIN_LINK.match(cur):
+            break
+        cur = cur2
+    return consumed and _only_filler(cur)
+
+
+def _pure_chain(inner: str) -> bool:
+    """«حدثنا … عن … عن ابن عمر» with no reporting verb at the end: at least two link words, and every
+    non-link token is a name-like token that is immediately preceded (within two tokens) by a link
+    word or a name particle — i.e. the text is nothing but narrators."""
+    toks = loose_tokens(inner)
+    if not (3 <= len(toks) <= _MAX_CHAIN_TOKENS) or toks[0] not in _CHAIN_START:
+        return False
+    links = sum(1 for t in toks if t in _CHAIN_START)
+    if links < 2:
+        return False
+    for i, t in enumerate(toks):
+        if t in _CHAIN_WORDS:
+            continue
+        window = toks[max(0, i - 2) : i]
+        if not any(w in _CHAIN_WORDS for w in window):
+            return False
+    return True
+
+
+def _attribution_only(q: QuoteResult) -> None:
+    q.status = "needs_review"
+    q.review_reason = "attribution_only"
+    q.message_key = "needs_review_attribution_only"
+    q.matches = []
+    q.external_search_links = []
+    q.total_positions = 0
+    q.score = 0.0
+    q.notice_keys = [k for k in q.notice_keys if k in {"image_extracted", "repeated_in_text"}]
 
 
 # --------------------------------------------------------------------------- V6 independent proof
@@ -199,6 +345,8 @@ def validate_response(
         elif q.status == "found" and not prove_found(store, q):  # V6
             _unproven(q)
             rejections += 1
+        elif q.status != "found" and attribution_only_kind(q.quoted_text) is not None:  # B05
+            _attribution_only(q)  # wording, not a rejection: «لم يوجد» would read as a verdict on a non-text
     # V5
     ar = load_messages(messages_dir, "ar")
     if not (ar.has("fixed", resp.disclaimer_key) and ar.has("fixed", resp.transparency_key)):
