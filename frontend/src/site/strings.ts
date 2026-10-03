@@ -244,7 +244,7 @@ const ar = {
   set_cleared: "حُذف المفتاح. عادت بصيرة إلى إعداد الخادم.",
   set_active: "نشط الآن",
   set_cat_title: "النماذج المعتمدة — أرقام مقيسة",
-  set_cat_sub: "قيست يوم 2026-10-03 على ست حالات استخراج حقيقية وصورة اختبار واحدة عبر بروكسي Genspark. «مطابقة» = أعاد المواضع نفسها التي يُحددها المحرك.",
+  set_cat_sub: "الأرقام مقيسة على مهام بصيرة الحقيقية (مواضع مطابقة من 6 · الزمن الوسيط · التكلفة النسبية). الموصى بها أولًا.",
   set_col_model: "النموذج",
   set_col_tier: "الفئة",
   set_col_cost: "التكلفة",
@@ -258,6 +258,8 @@ const ar = {
   set_ocr_no: "غير مقيسة",
   set_default: "الافتراضي",
   set_use: "استخدم",
+  set_more: "عرض كل النماذج ({n})",
+  set_less: "عرض الموصى بها فقط",
   set_note_rules: "تذكير: اختيار النموذج لا يغيّر الحكم على اقتباس مُعلَّم بالأقواس؛ بصمة الحتمية تبقى واحدة.",
 };
 
@@ -486,7 +488,7 @@ const en: Record<Keys, string> = {
   set_cleared: "Key removed. Basira is back to the server configuration.",
   set_active: "Active now",
   set_cat_title: "Approved models — measured numbers",
-  set_cat_sub: "Measured on 2026-10-03 on six real extraction cases and one test image through the Genspark proxy. “Exact” = returned the same spans the engine marks.",
+  set_cat_sub: "Numbers measured on Basira's real tasks (exact spans out of 6 · median time · relative cost). Recommended first.",
   set_col_model: "Model",
   set_col_tier: "Tier",
   set_col_cost: "Cost",
@@ -500,6 +502,8 @@ const en: Record<Keys, string> = {
   set_ocr_no: "Not measured",
   set_default: "Default",
   set_use: "Use",
+  set_more: "Show all models ({n})",
+  set_less: "Show recommended only",
   set_note_rules: "Reminder: the model choice never changes the verdict on a bracketed quote; the determinism hash stays the same.",
 };
 
