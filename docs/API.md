@@ -191,7 +191,7 @@ $ for i in $(seq 1 31); do curl -s -o /dev/null -w "%{http_code} " localhost:800
 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 429
 ```
 
-### 3.8 Verification receipt — `POST /v1/receipt` → `GET /v/{token}` (E-050)
+### 3.8 Verification receipt — `POST /v1/receipt` → `GET /v/{token}` (E-052)
 
 The receipt **is the input**: `token = base64url(zlib(json{v:1, t:text, l:ui_lang}))` — a compressed payload, no
 secret, no database (ADR-004). `receipt_id` = first 16 hex of `determinism_hash`. Issue and re-verify share one core

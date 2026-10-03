@@ -301,7 +301,7 @@ async def test_mcp_does_not_shadow_spa_fallback(test_settings: Settings, tmp_pat
         assert (await hc.get("/v1/models")).status_code == 200
 
 
-# --------------------------------------------------------------------------- issue_receipt (E-050)
+# --------------------------------------------------------------------------- issue_receipt (E-052)
 
 
 async def test_issue_receipt_tool_equals_rest_receipt_and_reverifies(mcp_app: AppFactory) -> None:

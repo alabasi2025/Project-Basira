@@ -218,7 +218,7 @@ async def verify_quote(
     }
 
 
-# --------------------------------------------------------------------------- verification receipt (E-050)
+# --------------------------------------------------------------------------- verification receipt (E-052)
 
 RECEIPT_VERSION = 1
 RECEIPT_ID_HEX = 16
