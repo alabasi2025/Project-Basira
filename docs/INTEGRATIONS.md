@@ -115,9 +115,9 @@ is what makes two faithful encodings of the Mushaf agree. `remote returned 1036 
 3. **Response examples** in the OpenAPI schema from the real fixtures in `frontend/src/__fixtures__/` (`openapi_examples` on the route) so the reference shows true data, never invented religious text.
 4. Version header `X-Basira-Version` + `corpus` block already in every response → document it as the reproducibility contract.
 
-### 3.3 Embeddable verification widget / proof links — **later (WP-10+)**
+### 3.3 Proof links — **SHIPPED (E-050, `feat/receipt`)** · embeddable widget — later
 
-* Stateless **proof link**: `/#/check?text=<url-encoded>` re-runs the check client-side; nothing is stored (dorar/hadith-mcp «shareable link» idea without their database).
+* Stateless **verification receipt**: `POST /v1/receipt {text, ui_lang}` → `{receipt_id, determinism_hash, corpus, index_sha256, build_sha, issued_at, summary, quotes, token}`; `GET /v/{token}?h=<hash>` re-runs the whole pipeline and answers `verified_now` / `stale`. `token = base64url(zlib(json{v:1,t,l}))` — the receipt *is* the input; nothing is stored (dorar/hadith-mcp «shareable link» idea without their database). MCP tool `issue_receipt`. JSON only — the design agent renders `/v/{token}` later. docs/API.md §3.8.
 * `<script>` widget for publishers: paste-box that posts to `/v1/check` and renders the same `QuoteCard`. Needs CORS allow-list per publisher and a size budget; not before the deploy target is known.
 
 ### 3.4 Explicitly rejected
