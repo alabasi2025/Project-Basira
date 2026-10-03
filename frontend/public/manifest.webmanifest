@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "بصيرة — التحقق من الاستشهاد بالقرآن والحديث",
+  "name": "بصيرة — تحقّق من نقل الآيات والأحاديث",
   "short_name": "بصيرة",
-  "description": "تحقق لحظي من صحة نسبة أي نص للقرآن الكريم أو الحديث النبوي بالمطابقة الحرفية مع المصادر الموثقة — بلا توليد وبلا حكم فقهي.",
+  "description": "الصق منشورًا أو ارفع صورته؛ تطابق بصيرة كل آية وحديث حرفيًا مع المصدر وتعرض الفرق — بلا توليد وبلا حكم.",
   "lang": "ar",
   "dir": "rtl",
   "start_url": "/",
@@ -13,8 +13,8 @@
     "standalone"
   ],
   "orientation": "any",
-  "background_color": "#12183F",
-  "theme_color": "#12183F",
+  "background_color": "#0B0F2A",
+  "theme_color": "#0B0F2A",
   "categories": [
     "education",
     "reference",
@@ -54,9 +54,31 @@
   ],
   "shortcuts": [
     {
-      "name": "تحقق من نص",
+      "name": "مساحة التحقق",
       "short_name": "تحقق",
-      "url": "/",
+      "url": "/check",
+      "icons": [
+        {
+          "src": "/brand/pwa/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "تحقق من صورة",
+      "short_name": "صورة",
+      "url": "/check?mode=image",
+      "icons": [
+        {
+          "src": "/brand/pwa/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "لماذا تثق بنا",
+      "short_name": "الثقة",
+      "url": "/trust",
       "icons": [
         {
           "src": "/brand/pwa/icon-192.png",
