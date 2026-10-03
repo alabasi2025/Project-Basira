@@ -17,7 +17,9 @@ corpus with the mock extraction provider (`LLM_PROVIDER=mock`), server started w
 | GET | `/v1/sources` | corpora: id, version/commit, licence, pinned sha256, live record counts | straight from `corpus/manifest.json` |
 | GET | `/v1/rules?ui_lang=ar\|en` | grounding rules (the four states, red lines) for models | same text as the MCP `grounding_rules` tool |
 | GET | `/v1/messages/{ar\|en}` | every user-facing string (single source of truth) | |
-| — | `/mcp` | MCP server (5 tools) when `BASIRA_MCP=1`; plain 404 otherwise | docs/INTEGRATIONS.md §3.1 |
+| POST | `/v1/receipt` | stateless **verification receipt**: verdicts + `token` (= the input, compressed) | §3.8; same header; nothing stored |
+| GET | `/v/{token}?h=<hash>` | re-run a receipt in full → `verified_now` / `stale` | §3.8; JSON only; `Cache-Control: no-store` |
+| — | `/mcp` | MCP server (6 tools) when `BASIRA_MCP=1`; plain 404 otherwise | docs/INTEGRATIONS.md §3.1 |
 
 Guards on every `/v1/*` route: CORS allow-list (`BASIRA_CORS_ORIGINS`), security headers + CSP, `Cache-Control: no-store`,
 rate limit **30 requests / minute per client IP** (`BASIRA_RATE_LIMIT_PER_MIN`) with an `X-Eval-Key` bypass for
@@ -189,6 +191,57 @@ $ for i in $(seq 1 31); do curl -s -o /dev/null -w "%{http_code} " localhost:800
 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 200 429
 ```
 
+### 3.8 Verification receipt — `POST /v1/receipt` → `GET /v/{token}` (E-052)
+
+The receipt **is the input**: `token = base64url(zlib(json{v:1, t:text, l:ui_lang}))` — a compressed payload, no
+secret, no database (ADR-004). `receipt_id` = first 16 hex of `determinism_hash`. Issue and re-verify share one core
+(`devgate.issue_receipt` / `devgate.verify_receipt`); the MCP tool `issue_receipt(text, ui_lang)` returns the same object.
+Real run on the full index (build `dev`, index `54892a95…`):
+
+```
+$ curl -s -D - -X POST localhost:8000/v1/receipt -H 'Content-Type: application/json' \
+  -d '{"text":"قال تعالى: ﴿إن الله مع الصابرين﴾ وقال ﷺ: «إنما الأعمال بالنيات» رواه البخاري","ui_lang":"ar"}'
+HTTP/1.1 200 OK
+x-basira-determinism-hash: 11ac6c77e96409ef4f689b28f677a18cf3cd96cefe1627338bc428f487bb95dc
+cache-control: no-store
+{"receipt_id":"11ac6c77e96409ef","determinism_hash":"11ac6c77e96409ef4f689b28f677a18cf3cd96cefe1627338bc428f487bb95dc",
+ "corpus":{"tanzil":"1.1","ohd_commit":"1515f6cb","hadeethenc":"1.7.0"},
+ "index_sha256":"54892a95fbb02d95d454fa8047e8178dd492073794603ed336a3504b12b9944d","build_sha":"dev",
+ "issued_at":"2026-10-03T07:45:58Z","ui_lang":"ar","summary":{"quotes":2,"by_status":{"found":2}},
+ "quotes":[… compact, same shape as MCP verify_text …],"validator_rejections":0,"disclaimer":"…",
+ "token":"eNotjjEKwkAQRa8yTJ3Gdm9jbyViIzYSk5hriOwSQRAisgoKOcX_p9grOLuxm_95_zE73apbVLpRpzzAsxYMiPngyUkav7iwkZJrtsIjYkl4wCPgzp5NGj_C7j9Pz5eT6ZpnBvsZPiPmkO2huBr2th-mt5iis6qdwYCb9WbVSlf203Kt-x_D9WP1",
+ "presented_hash":null,"verified_now":null,"stale":null}
+
+$ curl -s "localhost:8000/v/<token>?h=11ac6c77…95dc"      → "verified_now": true,  "stale": false
+$ curl -s "localhost:8000/v/<token>?h=000…000"             → "verified_now": false, "stale": true   (HTTP 200: said, not hidden)
+$ curl -s "localhost:8000/v/<token>"                       → both false (plain re-run, no claim made)
+$ curl -s localhost:8000/v/not-a-token                     → HTTP 400 {"error":{"code":"receipt_invalid",…}}
+```
+
+`stale: true` means the fresh `determinism_hash` differs from the one presented: the corpus build (`index_sha256`),
+the matcher, or a verdict changed since issue. Limits: the token is refused **before** inflating when longer than any
+legitimate token (`413 text_too_long`), and inflation is bounded to `max_text_chars × 4 + 256` bytes (no zip bombs).
+Both routes sit behind `_guard` (readiness + the same rate limiter / `X-Eval-Key`).
+
+### 3.9 Post-validator V6 — every `found` has an independent proof (B04, I17)
+
+`verify.validate_response` re-derives each `found` from the Store alone: the quote's **strict** tokens
+(`normalize.strict_tokens`) must occur as a **contiguous window** in the strict token stream of the first matched record
+(crossing adjacent ayat for a range), checked in **both** rasm streams — the Uthmani display stream (`GS` at `g_start`) and
+the simple stream (`GS2` at `g2_start`) with their twin-rasm alternates (E-024). Failure → `needs_review` /
+`review_reason: "validator_unproven"`, `message_key: needs_review_unproven`, `validator_rejections += 1`; the closest
+record stays visible. Measured: first version (display stream only) wrongly rejected **3/150** eval cases
+(A-010, A-011, A-013 — simple-rasm quotes of ayat whose two rasms differ in word count); proving in both streams → **150/150**.
+
+### 3.10 `needs_review` / `attribution_only` (B05)
+
+A quote that is only an **isnad** («عن أبي هريرة رضي الله عنه قال: قال رسول الله ﷺ:», «حدثنا … عن … عن ابن عمر») or only an
+**attribution** («رواه البخاري», «متفق عليه», «أخرجه مسلم في صحيحه», also inside «قال ﷺ: «رواه البخاري ومسلم»») is never
+`not_found`: `not_found` would read as a verdict on a text that was not supplied. It returns `needs_review` /
+`review_reason: "attribution_only"`, `message_key: needs_review_attribution_only` («هذا عزو أو إسناد بلا متن … أدخل نص
+المتن ليُفحص»), `matches: []`, no external links, and does **not** count as a validator rejection (wording, not a
+rejection). A chain that is verbatim in an OHD record (records carry their isnad) stays `found` — V6 proves it.
+
 ## 4. Determinism contract
 
 `determinism_hash = sha256(index records sha256 ‖ loose-normalised input ‖ ordered verdicts (span, status, message_key, matched refs))`.
@@ -211,6 +264,7 @@ the input, ADR-005), it never changes matching. `/v1/check/image` in mock mode r
 |---|---|---|
 | 413 | `text_too_long` | `text`/`answer` > `BASIRA_MAX_TEXT_CHARS` (5000) |
 | 413 | `image_too_large` | image > 6 MB |
+| 400 | `receipt_invalid` | `GET /v/{token}`: token is not base64url(zlib(json{v:1,…})) or was not issued by Basira |
 | 422 | `invalid_input` | blank text, bad JSON, unsupported MIME, unknown `lang` |
 | 429 | `rate_limited` | > 30 requests/min from one client without `X-Eval-Key` |
 | 503 | `degraded` | index still loading (see `/health`) |

@@ -87,11 +87,11 @@ async def _call_err(s: ClientSession, name: str, args: dict[str, Any]) -> dict[s
 # --------------------------------------------------------------------------- discovery
 
 
-async def test_tools_list_has_the_five_tools(session: SessionFactory) -> None:
+async def test_tools_list_has_the_six_tools(session: SessionFactory) -> None:
     async with session() as s:
         tools = await s.list_tools()
         names = [t.name for t in tools.tools]
-        assert names == list(TOOL_NAMES)
+        assert names == list(TOOL_NAMES) and len(names) == 6 and "issue_receipt" in names
         for t in tools.tools:
             assert t.description and len(t.description) > 80, t.name
             assert scan_forbidden(t.description) == [], (t.name, scan_forbidden(t.description))
@@ -299,3 +299,26 @@ async def test_mcp_does_not_shadow_spa_fallback(test_settings: Settings, tmp_pat
         assert r.status_code == 200
         assert {t["name"] for t in r.json()["result"]["tools"]} == set(TOOL_NAMES)
         assert (await hc.get("/v1/models")).status_code == 200
+
+
+# --------------------------------------------------------------------------- issue_receipt (E-052)
+
+
+async def test_issue_receipt_tool_equals_rest_receipt_and_reverifies(mcp_app: AppFactory) -> None:
+    text = "قال تعالى: ﴿إن الله مع الصابرين﴾"
+    async with mcp_app() as (_, hc):
+        rest = (await hc.post("/v1/receipt", json={"text": text, "ui_lang": "ar"})).json()
+        async with mcp_session(hc) as s:
+            out = await _call(s, "issue_receipt", {"text": text, "ui_lang": "ar"})
+        # same core → same token, same hash, same receipt_id (issued_at may differ by a second)
+        assert out["token"] == rest["token"] and out["determinism_hash"] == rest["determinism_hash"]
+        assert out["receipt_id"] == rest["receipt_id"] == out["determinism_hash"][:16]
+        assert out["summary"] == rest["summary"] and out["index_sha256"] == rest["index_sha256"]
+        again = await hc.get(f"/v/{out['token']}", params={"h": out["determinism_hash"]})
+        assert again.status_code == 200 and again.json()["verified_now"] is True
+
+
+async def test_issue_receipt_tool_errors_use_the_envelope(session: SessionFactory) -> None:
+    async with session() as s:
+        body = await _call_err(s, "issue_receipt", {"text": "   "})
+        assert body["code"] == "invalid_input" and body["message_ar"] and body["message_en"]

@@ -35,6 +35,8 @@ ReviewReason = Literal[
     "diacritic_difference",
     "diacritic_unverified",
     "foreign_material",
+    "validator_unproven",
+    "attribution_only",
 ]
 CorpusName = Literal["tanzil", "ohd", "hadeethenc"]
 
@@ -253,6 +255,43 @@ class GuardResponse(BaseModel):
     summary_en: str
     determinism_hash: str
     corpus: dict[str, str]
+
+
+class ReceiptRequest(BaseModel):
+    """Text to issue a stateless verification receipt for (docs/API.md §Receipt)."""
+
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"text": "قال تعالى: ﴿إن الله مع الصابرين﴾", "ui_lang": "ar"}]}
+    )
+
+    text: str = Field(min_length=1, max_length=5000)
+    ui_lang: Literal["ar", "en"] = "ar"
+
+
+class ReceiptSummary(BaseModel):
+    quotes: int
+    by_status: dict[str, int]
+
+
+class ReceiptResponse(BaseModel):
+    """The receipt is the input: `token` = base64url(zlib(json{v:1,t:text,l:ui_lang})). Nothing is stored."""
+
+    receipt_id: str  # first 16 hex of determinism_hash
+    determinism_hash: str
+    corpus: dict[str, str]
+    index_sha256: str
+    build_sha: str
+    issued_at: str  # UTC ISO-8601, second precision
+    ui_lang: Literal["ar", "en"]
+    summary: ReceiptSummary
+    quotes: list[dict[str, Any]]  # compact quotes (same shape as the MCP verify_text tool)
+    validator_rejections: int
+    disclaimer: str
+    token: str
+    # GET /v/{token} only
+    presented_hash: str | None = None
+    verified_now: bool | None = None
+    stale: bool | None = None
 
 
 class RulesResponse(BaseModel):

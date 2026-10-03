@@ -51,7 +51,7 @@ from app.byok import (
 )
 from app.config import REPO_ROOT, Settings
 from app.config import settings as default_settings
-from app.devgate import DevGateError, grounding_rules
+from app.devgate import DevGateError, grounding_rules, issue_receipt, verify_receipt
 from app.english_gate import EnglishGate
 from app.guard import guard_answer
 from app.messages import load_messages, self_check_templates
@@ -65,6 +65,8 @@ from app.schemas import (
     GuardRequest,
     GuardResponse,
     HealthResponse,
+    ReceiptRequest,
+    ReceiptResponse,
     RulesResponse,
     SourceInfo,
 )
@@ -493,6 +495,59 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         return JSONResponse(
             content=GuardResponse(**result).model_dump(),
             headers={"X-Basira-Determinism-Hash": str(result["determinism_hash"])},
+        )
+
+    @app.post(
+        "/v1/receipt",
+        response_model=ReceiptResponse,
+        responses={
+            413: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+            429: {"model": ErrorResponse},
+        },
+    )
+    async def receipt(req: ReceiptRequest, request: Request) -> JSONResponse:
+        """Stateless verification receipt: run the check, return the verdicts + a token that *is* the input
+        (base64url(zlib(json))). Nothing is stored (ADR-004); `GET /v/{token}` re-runs it (docs/API.md)."""
+        pipeline = _guard(request)
+        result = await issue_receipt(
+            pipeline,
+            cfg,
+            req.text,
+            req.ui_lang,
+            index_sha256=str(LAST_BOOT["index_sha256"]),
+            build_sha=cfg.build_sha,
+        )
+        return JSONResponse(
+            content=ReceiptResponse(**result).model_dump(),
+            headers={
+                "X-Basira-Determinism-Hash": str(result["determinism_hash"]),
+                "Cache-Control": "no-store",
+            },
+        )
+
+    @app.get(
+        "/v/{token}",
+        response_model=ReceiptResponse,
+        responses={
+            400: {"model": ErrorResponse},
+            413: {"model": ErrorResponse},
+            429: {"model": ErrorResponse},
+        },
+    )
+    async def verify_receipt_route(token: str, request: Request, h: str | None = None) -> JSONResponse:
+        """Re-run a receipt in full. `verified_now` = the fresh hash equals `?h=`; `stale` = it differs (the corpus
+        build or a verdict changed — stated, never hidden). JSON only; the UI renders it."""
+        pipeline = _guard(request)
+        result = await verify_receipt(
+            pipeline, cfg, token, h, index_sha256=str(LAST_BOOT["index_sha256"]), build_sha=cfg.build_sha
+        )
+        return JSONResponse(
+            content=ReceiptResponse(**result).model_dump(),
+            headers={
+                "X-Basira-Determinism-Hash": str(result["determinism_hash"]),
+                "Cache-Control": "no-store",
+            },
         )
 
     @app.get("/v1/messages/{lang}")

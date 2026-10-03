@@ -11,6 +11,11 @@ One implementation, three doors (docs/API.md, docs/GUARD.md, docs/INTEGRATIONS.m
 * ``sources_info``   — ``corpus/manifest.json`` → sources, versions, licences, sha256.
 * ``grounding_rules``— fixed text drawn from ``SAFETY.md`` (the four states, the red lines, what
   «لم يوجد في مصادرنا» does and does not mean) for a model to load once as instructions.
+* ``issue_receipt`` / ``verify_receipt`` — the stateless verification receipt (docs/API.md §Receipt):
+  the receipt *is* the input. ``token = base64url(zlib(json{v:1,t:text,l:ui_lang}))`` — a compressed
+  payload, no secret, no database. ``GET /v/{token}`` re-runs the whole pipeline and compares the fresh
+  ``determinism_hash`` with the one the holder presents (``?h=``): equal → ``verified_now``; different →
+  ``stale`` (the corpus build or a verdict changed — said explicitly, never hidden).
 
 Red lines hold at this layer: the only religious text that leaves is ``source_text`` — the corpus
 record verbatim as produced by the pipeline (already V1-validated). Nothing is stored or logged.
@@ -18,7 +23,12 @@ record verbatim as produced by the pipeline (already V1-validated). Nothing is s
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json
 import re
+import zlib
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -206,6 +216,103 @@ async def verify_quote(
         "determinism_hash": resp.determinism_hash,
         "disclaimer": full["disclaimer"],
     }
+
+
+# --------------------------------------------------------------------------- verification receipt (E-052)
+
+RECEIPT_VERSION = 1
+RECEIPT_ID_HEX = 16
+# Token bound: a zlib payload is never much larger than its input, and the input is bounded by
+# max_text_chars; this is the absolute cap on *bytes of token* before anything is decoded (zip-bomb guard).
+_TOKEN_OVERHEAD = 256
+
+
+def encode_receipt_token(text: str, ui_lang: UiLang) -> str:
+    payload = json.dumps(
+        {"v": RECEIPT_VERSION, "t": text, "l": ui_lang}, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(zlib.compress(payload, 9)).rstrip(b"=").decode("ascii")
+
+
+def decode_receipt_token(token: str, settings: Settings) -> tuple[str, UiLang]:
+    """Inverse of :func:`encode_receipt_token`. Any malformed token → ``receipt_invalid``; an oversized one →
+    ``text_too_long`` (same code as the REST body limit, so clients see one rule)."""
+    max_payload = settings.max_text_chars * 4 + _TOKEN_OVERHEAD  # UTF-8 worst case + JSON envelope
+    max_token = 4 * max_payload // 3 + 4
+    if not isinstance(token, str) or not token:
+        raise DevGateError("receipt_invalid")
+    if len(token) > max_token:
+        raise DevGateError("text_too_long", max=settings.max_text_chars)
+    try:
+        raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
+        payload = zlib.decompressobj().decompress(raw, max_payload)
+        obj = json.loads(payload.decode("utf-8"))
+    except (binascii.Error, zlib.error, UnicodeDecodeError, ValueError):
+        raise DevGateError("receipt_invalid") from None
+    if not isinstance(obj, dict) or obj.get("v") != RECEIPT_VERSION or not isinstance(obj.get("t"), str):
+        raise DevGateError("receipt_invalid")
+    text = validate_text(str(obj["t"]), settings)
+    return text, validate_lang(str(obj.get("l", "ar")))
+
+
+def _receipt_of(
+    resp: CheckResponse, settings: Settings, lang: UiLang, token: str, *, index_sha256: str, build_sha: str
+) -> dict[str, Any]:
+    full = compact_check(resp, settings, lang)
+    by_status: dict[str, int] = {}
+    for q in resp.quotes:
+        by_status[q.status] = by_status.get(q.status, 0) + 1
+    return {
+        "receipt_id": resp.determinism_hash[:RECEIPT_ID_HEX],
+        "determinism_hash": resp.determinism_hash,
+        "corpus": resp.corpus,
+        "index_sha256": index_sha256,
+        "build_sha": build_sha,
+        "issued_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "ui_lang": lang,
+        "summary": {"quotes": len(resp.quotes), "by_status": by_status},
+        "quotes": full["quotes"],
+        "validator_rejections": resp.validator_rejections,
+        "disclaimer": full["disclaimer"],
+        "token": token,
+    }
+
+
+async def issue_receipt(
+    pipeline: Pipeline,
+    settings: Settings,
+    text: str,
+    ui_lang: str = "ar",
+    *,
+    index_sha256: str = "",
+    build_sha: str = "",
+) -> dict[str, Any]:
+    """``POST /v1/receipt`` and the MCP ``issue_receipt`` tool. Nothing is stored: the token carries the input."""
+    lang = validate_lang(ui_lang)
+    text = validate_text(text, settings)
+    resp = await pipeline.check(CheckRequest(text=text, ui_lang=lang, options=CheckOptions(max_candidates=3)))
+    token = encode_receipt_token(text, lang)
+    return _receipt_of(resp, settings, lang, token, index_sha256=index_sha256, build_sha=build_sha)
+
+
+async def verify_receipt(
+    pipeline: Pipeline,
+    settings: Settings,
+    token: str,
+    h: str | None = None,
+    *,
+    index_sha256: str = "",
+    build_sha: str = "",
+) -> dict[str, Any]:
+    """``GET /v/{token}?h=``: decode, re-run in full, and say whether the presented hash still holds."""
+    text, lang = decode_receipt_token(token, settings)
+    resp = await pipeline.check(CheckRequest(text=text, ui_lang=lang, options=CheckOptions(max_candidates=3)))
+    out = _receipt_of(resp, settings, lang, token, index_sha256=index_sha256, build_sha=build_sha)
+    presented = (h or "").strip().lower()
+    out["presented_hash"] = presented or None
+    out["verified_now"] = bool(presented) and presented == resp.determinism_hash
+    out["stale"] = bool(presented) and presented != resp.determinism_hash
+    return out
 
 
 def sources_info(manifest: dict[str, Any], counts: dict[str, int] | None = None) -> list[dict[str, Any]]:
