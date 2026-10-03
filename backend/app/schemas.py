@@ -35,6 +35,8 @@ ReviewReason = Literal[
     "diacritic_difference",
     "diacritic_unverified",
     "foreign_material",
+    "validator_unproven",
+    "attribution_only",
 ]
 CorpusName = Literal["tanzil", "ohd", "hadeethenc"]
 
