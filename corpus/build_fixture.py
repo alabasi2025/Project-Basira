@@ -22,6 +22,7 @@ import json
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "index"
@@ -86,6 +87,35 @@ def main() -> int:
                 counts[c] += 1
                 out.write(line)
                 h.update(line.encode("utf-8"))
+    # English gate (E-048): a fixture translations index restricted to the kept Quran ayat + kept
+    # HadeethEnc ids, so pipeline tests exercise the gate offline. Skipped when the full one is absent.
+    if (SRC / "translations.pkl").exists():
+        sys.path.insert(0, str(ROOT.parent / "backend"))
+        from app.retrieve.translations import TranslationIndex  # noqa: PLC0415
+
+        full = TranslationIndex.load(SRC / "translations.pkl")
+        kept_q = {
+            (int(d["s"]), int(d["a"]))
+            for d in map(json.loads, (OUT / "records.jsonl").open(encoding="utf-8"))
+            if d["c"] == "tanzil"
+        }
+        kept_h = {
+            int(d["id"])
+            for d in map(json.loads, (OUT / "records.jsonl").open(encoding="utf-8"))
+            if d["c"] == "hadeethenc"
+        }
+
+        def keep(doc: Any) -> bool:
+            if doc.kind == "quran":
+                s_, a_ = doc.ref.split(":")
+                return (int(s_), int(a_)) in kept_q
+            return int(doc.ref) in kept_h
+
+        sub = [d for d in full.docs if keep(d)]
+        TranslationIndex.build(sub, meta={"fixture_of": full.meta.get("source_sha256")}).save(
+            OUT / "translations.pkl"
+        )
+        counts["translations"] = len(sub)
     src_meta = json.loads((SRC / "meta.json").read_text(encoding="utf-8"))
     meta = {
         "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

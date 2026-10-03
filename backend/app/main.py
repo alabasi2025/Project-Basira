@@ -36,9 +36,10 @@ from fastapi.responses import JSONResponse
 from app import __version__
 from app.config import Settings
 from app.config import settings as default_settings
+from app.english_gate import EnglishGate
 from app.messages import load_messages, self_check_templates
 from app.pipeline import CorpusMeta, Pipeline
-from app.providers import ProviderError, make_llm, make_vision
+from app.providers import ProviderError, make_llm, make_picker, make_vision
 from app.schemas import (
     CheckRequest,
     CheckResponse,
@@ -141,7 +142,13 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         meta = CorpusMeta.from_manifest(manifest, store.meta)
         app.state.llm = make_llm(cfg.llm_provider)
         app.state.vision = make_vision(cfg.vision_provider)
-        app.state.pipeline = Pipeline(store, retriever, app.state.llm, cfg, meta)
+        english = EnglishGate.from_path(
+            store,
+            cfg.index_dir / "translations.pkl",
+            make_picker(cfg.llm_provider),
+            hadeethenc_link_only=(cfg.hadeethenc_mode == "link"),
+        )
+        app.state.pipeline = Pipeline(store, retriever, app.state.llm, cfg, meta, english=english)
         app.state.manifest = manifest
         app.state.store = store
         app.state.ready = True

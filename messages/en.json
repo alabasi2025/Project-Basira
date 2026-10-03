@@ -46,7 +46,8 @@
     "harakat_incomplete": "Your text is partially vocalised; the highlighted letters in the source carry marks that are not written in yours. A missing mark is not a difference, but we show it so the comparison is complete.",
     "waqf_note": "The last word of your text ends with a sukun (pausal form) where the Mushaf writes the connecting vowel. This is a spelling convention, not a transmission difference.",
     "diacritic_unverified": "We could not compare the vowel marks letter by letter at this position (the rasm differs in letter count); the letters match, the marks were not machine-verified.",
-    "foreign_material": "The quote contains words, digits or symbols that are not part of the text (highlighted in your text). Remove them and check again."
+    "foreign_material": "The quote contains words, digits or symbols that are not part of the text (highlighted in your text). Remove them and check again.",
+    "english_candidates": "This quote is not in Arabic. We show the closest positions in the approved translations (QuranEnc / HadeethEnc) with their verbatim Arabic original; this is an approximate lexical match, not a letter-exact verification."
   },
   "labels": {
     "found": "Found",
