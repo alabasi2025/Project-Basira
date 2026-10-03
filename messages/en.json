@@ -12,7 +12,9 @@
     "needs_review_non_arabic": "Needs review. Our sources are Arabic only, so translated texts are not verified automatically.",
     "needs_review_failure": "Needs review. One stage of the automatic check failed for this quote, so no result is shown.",
     "needs_review_image": "Needs review. The text was extracted automatically from an image; please confirm the extracted text first.",
-    "not_found_any": "We did not find this text in the Mushaf or in the hadith collections we hold. This is not a judgment on it; consult an approved Mushaf or specialised hadith references."
+    "not_found_any": "We did not find this text in the Mushaf or in the hadith collections we hold. This is not a judgment on it; consult an approved Mushaf or specialised hadith references.",
+    "needs_review_unproven": "Needs review. A preliminary match was found, but the independent validator could not prove that the words of your text occur contiguously in the source text; compare the source text shown yourself or consult a specialist.",
+    "needs_review_attribution_only": "This is an attribution or a narration chain without a text (e.g. \"narrated by al-Bukhari\" or the chain of narrators alone). No text was checked and nothing is judged here; enter the text itself to have it checked."
   },
   "notice": {
     "hadith_variant": "Hadiths are transmitted with close wordings across different books; the highlighted difference may be a wording in another transmission our sources do not cover.",
