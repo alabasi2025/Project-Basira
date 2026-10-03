@@ -20,6 +20,11 @@ RECORD FORMAT (compact; tokens are pre-computed so the server starts fast):
               "tp":plain_text_verbatim,"m":matn_start_token_index}
     hadeethenc: {"c":"hadeethenc","id":int,"title":str,"ht":hadith_text,"g":grade,"tk":takhrij,"u":link}
 
+Additional step (English gate, docs/ENGLISH_GATE.md): if ``corpus/data/translations/`` exists
+(``python3 corpus/fetch_translations.py``), a BM25 index over the English translations is written to
+``corpus/index/translations.pkl`` and its sha256 recorded in ``meta.json["translations"]``. Absent
+translations are reported, never fatal — the Arabic product does not depend on them.
+
 Invariants enforced here (build fails otherwise):
   * record counts equal manifest expectations;
   * for OHD, loose tokens of the plain file == loose tokens of the display file for every row
@@ -43,10 +48,13 @@ REPO = ROOT.parent
 sys.path.insert(0, str(REPO / "backend"))
 
 from app.normalize import BASMALA_LOOSE, Token, tokenize  # noqa: E402
+from app.retrieve.translations import TranslationIndex, docs_from_data  # noqa: E402
 
 DATA = ROOT / "data"
 INDEX = ROOT / "index"
 MANIFEST = ROOT / "manifest.json"
+TRANSLATIONS_DATA = DATA / "translations"
+TRANSLATIONS_PKL = INDEX / "translations.pkl"
 RLM = "\u200f"
 
 # Loose-token patterns whose END marks the most plausible start of the matn (R2, indexing aid only).
@@ -197,7 +205,17 @@ def build_hadeethenc(src: dict[str, Any]) -> list[dict[str, Any]]:
     rows = ws.iter_rows(values_only=True)
     next(rows)  # comment block
     header = [str(h) for h in next(rows)]
-    expected_header = ["id", "title", "hadith_text", "explanation", "word_meanings", "benefits", "grade", "takhrij", "link"]
+    expected_header = [
+        "id",
+        "title",
+        "hadith_text",
+        "explanation",
+        "word_meanings",
+        "benefits",
+        "grade",
+        "takhrij",
+        "link",
+    ]
     if header != expected_header:
         raise SystemExit(f"hadeethenc: unexpected header {header}")
     records: list[dict[str, Any]] = []
@@ -225,6 +243,44 @@ def build_hadeethenc(src: dict[str, Any]) -> list[dict[str, Any]]:
     if len(records) != src["expected_records"]:
         raise SystemExit(f"hadeethenc: {len(records)} != {src['expected_records']}")
     return records
+
+
+# --------------------------------------------------------------------------- English translations (additive)
+
+
+def build_translations(manifest: dict[str, Any]) -> dict[str, Any] | None:
+    """BM25 index over English translations → translations.pkl. Returns meta or None when data is absent."""
+    if not TRANSLATIONS_DATA.is_dir():
+        print(
+            "translations: corpus/data/translations/ absent — skipped (python3 corpus/fetch_translations.py)"
+        )
+        return None
+    t0 = time.time()
+    pins = {it["id"]: it.get("sha256", "") for it in manifest.get("translations", {}).get("items", [])}
+    for item_id, pinned in pins.items():
+        f = TRANSLATIONS_DATA / f"{item_id}.jsonl"
+        if f.exists() and pinned and sha256_file(f) != pinned:
+            raise SystemExit(f"translations: {f.name} sha256 != manifest pin (re-run fetch_translations.py)")
+    docs, extra = docs_from_data(TRANSLATIONS_DATA)
+    idx = TranslationIndex.build(docs, meta={**extra, "source_sha256": pins})
+    idx.save(TRANSLATIONS_PKL)
+    meta = {
+        **idx.meta,
+        "file": TRANSLATIONS_PKL.name,
+        "sha256": sha256_file(TRANSLATIONS_PKL),
+        "bytes": TRANSLATIONS_PKL.stat().st_size,
+        "build_seconds": round(time.time() - t0, 1),
+    }
+    print(f"translations: {idx.meta['n_docs']} docs → {TRANSLATIONS_PKL.name} in {meta['build_seconds']}s")
+    return meta
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 # --------------------------------------------------------------------------- main
@@ -264,6 +320,9 @@ def main() -> int:
             "build_seconds": round(time.time() - t0, 1),
         }
     )
+    translations_meta = build_translations(manifest)
+    if translations_meta is not None:
+        meta["translations"] = translations_meta
     (INDEX / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(meta, ensure_ascii=False, indent=2))
     return 0
