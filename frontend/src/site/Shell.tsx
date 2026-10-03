@@ -16,6 +16,7 @@ const NAV: { route: Exclude<Route, "notfound">; key: SiteKey }[] = [
   { route: "developers", key: "nav_developers" },
   { route: "trust", key: "nav_trust" },
   { route: "about", key: "nav_about" },
+  { route: "settings", key: "nav_settings" },
 ];
 
 export const GITHUB = "https://github.com/MoTechSys/Project-Basira";

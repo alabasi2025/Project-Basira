@@ -12,6 +12,7 @@ const Developers = lazy(() => import("./site/Pages").then((m) => ({ default: m.D
 const Trust = lazy(() => import("./site/Pages").then((m) => ({ default: m.Trust })));
 const About = lazy(() => import("./site/Pages").then((m) => ({ default: m.About })));
 const NotFound = lazy(() => import("./site/Pages").then((m) => ({ default: m.NotFound })));
+const Settings = lazy(() => import("./site/Settings"));
 
 function initialLang(): Lang {
   const q = new URLSearchParams(location.search).get("lang");
@@ -36,7 +37,7 @@ export default function App() {
   }, [lang]);
 
   useEffect(() => {
-    const key = ({ check: "nav_check", services: "nav_services", developers: "nav_developers", trust: "nav_trust", about: "nav_about" } as const)[route as "check"];
+    const key = ({ check: "nav_check", services: "nav_services", developers: "nav_developers", trust: "nav_trust", about: "nav_about", settings: "nav_settings" } as const)[route as "check"];
     document.title = key ? `${t(lang, key)} | ${lang === "ar" ? "بصيرة" : "Basira"}` : (TITLES["home"]?.[lang] ?? "Basira");
     if (!location.hash) window.scrollTo({ top: 0 });
   }, [route, lang]);
@@ -60,6 +61,9 @@ export default function App() {
       break;
     case "about":
       page = <About lang={lang} />;
+      break;
+    case "settings":
+      page = <Settings lang={lang} />;
       break;
     default:
       page = <NotFound lang={lang} />;

@@ -97,6 +97,83 @@ export interface Health {
 
 export const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 
+/* ---------------------------------------------------------------- BYOK (E-051)
+ * The visitor's own model key lives in localStorage only and travels as request headers.
+ * The server uses it for that one request and never stores, logs or echoes it. */
+export const BYOK_KEY = "basira.byok.key";
+export const BYOK_MODEL = "basira.byok.model";
+
+export interface Byok {
+  key: string;
+  model: string;
+}
+
+export function getByok(): Byok | null {
+  try {
+    const key = localStorage.getItem(BYOK_KEY) ?? "";
+    const model = localStorage.getItem(BYOK_MODEL) ?? "";
+    return key ? { key, model } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setByok(b: Byok | null): void {
+  try {
+    if (!b) {
+      localStorage.removeItem(BYOK_KEY);
+      localStorage.removeItem(BYOK_MODEL);
+    } else {
+      localStorage.setItem(BYOK_KEY, b.key);
+      localStorage.setItem(BYOK_MODEL, b.model);
+    }
+  } catch {
+    /* private mode: nothing persists, which is fine */
+  }
+  window.dispatchEvent(new Event("basira:byok"));
+}
+
+export function byokHeaders(override?: Byok | null): Record<string, string> {
+  const b = override === undefined ? getByok() : override;
+  if (!b) return {};
+  const h: Record<string, string> = { "X-Basira-LLM-Key": b.key };
+  if (b.model) h["X-Basira-LLM-Model"] = b.model;
+  return h;
+}
+
+export interface ModelInfo {
+  id: string;
+  label: string;
+  vendor: string;
+  tier: "flagship" | "balanced" | "fast";
+  cost_x: number;
+  extract_exact: number;
+  extract_total: number;
+  extract_p50_ms: number;
+  ocr_ok: boolean;
+  ocr_ms: number | null;
+  vision: boolean;
+  note_ar: string;
+  note_en: string;
+  default: boolean;
+}
+
+export interface ModelsCatalog {
+  default: string;
+  models: ModelInfo[];
+}
+
+export type VerifyResult = { ok: true; model: string; latency_ms: number } | { ok: false; reason: "auth" | "model" | "transport"; latency_ms?: number };
+
+export async function models(): Promise<ModelsCatalog> {
+  return parse<ModelsCatalog>(await fetch(`${API_BASE}/v1/models`));
+}
+
+export async function verifyKey(b: Byok): Promise<VerifyResult> {
+  const r = await fetch(`${API_BASE}/v1/models/verify`, { method: "POST", headers: byokHeaders(b) });
+  return parse<VerifyResult>(r);
+}
+
 export class BasiraError extends Error {
   readonly status: number;
   readonly body: ApiError | null;
@@ -121,7 +198,7 @@ async function parse<T>(r: Response): Promise<T> {
 export async function check(text: string, ui_lang: Lang, signal?: AbortSignal): Promise<CheckResponse> {
   const r = await fetch(`${API_BASE}/v1/check`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...byokHeaders() },
     body: JSON.stringify({ text, ui_lang, source_modality: "text", options: { max_candidates: 3 } }),
     ...(signal ? { signal } : {}),
   });
@@ -132,7 +209,7 @@ export async function checkImage(file: File, ui_lang: Lang, signal?: AbortSignal
   const fd = new FormData();
   fd.append("image", file);
   fd.append("ui_lang", ui_lang);
-  const r = await fetch(`${API_BASE}/v1/check/image`, { method: "POST", body: fd, ...(signal ? { signal } : {}) });
+  const r = await fetch(`${API_BASE}/v1/check/image`, { method: "POST", headers: byokHeaders(), body: fd, ...(signal ? { signal } : {}) });
   return parse<CheckResponse>(r);
 }
 

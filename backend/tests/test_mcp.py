@@ -10,6 +10,7 @@ import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -274,3 +275,27 @@ async def test_mcp_and_rest_give_byte_equal_verdicts(mcp_app: AppFactory) -> Non
     assert mcp["determinism_hash"] == rest["determinism_hash"]
     assert [q["status"] for q in mcp["quotes"]] == [q["status"] for q in rest["quotes"]]
     assert mcp["quotes"][0]["matches"][0]["source_text"] == rest["quotes"][0]["matches"][0]["source_text"]
+
+
+async def test_mcp_does_not_shadow_spa_fallback(test_settings: Settings, tmp_path: Path) -> None:
+    """Regression (2026-10-03): ``app.mount("/", mcp_app)`` swallowed the SPA catch-all, so with
+    BASIRA_MCP=1 the site root and every client route answered 404. MCP and the static frontend must coexist."""
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "index.html").write_text("<html><body>spa</body></html>", encoding="utf-8")
+    cfg = replace(test_settings, mcp_enabled=True, static_dir=tmp_path)
+    app = create_app(cfg)
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as hc,
+    ):
+        for path in ("/", "/settings", "/check", "/trust"):
+            r = await hc.get(path)
+            assert r.status_code == 200 and "spa" in r.text, path
+        r = await hc.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            headers={"accept": "application/json, text/event-stream", "content-type": "application/json"},
+        )
+        assert r.status_code == 200
+        assert {t["name"] for t in r.json()["result"]["tools"]} == set(TOOL_NAMES)
+        assert (await hc.get("/v1/models")).status_code == 200

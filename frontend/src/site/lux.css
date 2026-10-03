@@ -2010,3 +2010,38 @@ body {
     display: none !important;
   }
 }
+
+/* ------------------------------------------------------------------ settings (BYOK, E-051) */
+.set-card { display: grid; gap: 1.1rem; }
+.set-field { display: grid; gap: 0.4rem; }
+.set-field label { font-weight: 700; font-size: 0.92rem; color: var(--lux-text-2); }
+.set-input-row { display: flex; gap: 0.5rem; align-items: stretch; }
+.set-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-family: var(--bs-font-mono, monospace);
+  font-size: 0.95rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--lux-line, rgb(98 80 235 / 0.35));
+  background: var(--lux-surface-2, rgb(255 255 255 / 0.04));
+  color: var(--lux-text, inherit);
+}
+.set-input:focus-visible { outline: 2px solid var(--lux-accent, #2ef2c2); outline-offset: 2px; }
+select.set-input { font-family: var(--bs-font-ui); }
+.set-help { font-size: 0.85rem; color: var(--lux-text-2); margin: 0; }
+.set-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
+.set-status { min-height: 1.5rem; }
+.set-status p { margin: 0.2rem 0; font-size: 0.95rem; }
+.set-ok { color: var(--bs-state-found, #0f8a5f); font-weight: 700; }
+.set-fail { color: var(--bs-error, #c62c45); font-weight: 700; }
+.set-active code { font-family: var(--bs-font-mono, monospace); }
+.set-table td { vertical-align: top; }
+.set-table tr[data-selected] td { background: rgb(46 242 194 / 0.08); }
+.set-vendor { font-size: 0.8rem; color: var(--lux-text-2); margin-inline-start: 0.35rem; }
+.set-default { margin-inline-start: 0.5rem; }
+.set-note { margin: 0.35rem 0 0; font-size: 0.82rem; color: var(--lux-text-2); max-width: 36ch; }
+@media (max-width: 720px) {
+  .set-table th:nth-child(2), .set-table td:nth-child(2) { display: none; }
+}

@@ -26,6 +26,7 @@ from typing import Any
 from fastapi import FastAPI
 from mcp.server.mcpserver.exceptions import ToolError
 from starlette.applications import Starlette
+from starlette.routing import Route
 
 from app import __version__
 from app.config import Settings
@@ -193,5 +194,10 @@ def mount_mcp(app: FastAPI, settings: Settings) -> Starlette:
             yield state
 
     app.router.lifespan_context = chained
-    app.mount("/", mcp_app)  # the Starlette app only answers MCP_PATH; everything else there → 404
+
+    # Exact-path route instead of ``app.mount("/", …)``: a root mount would swallow every URL the FastAPI
+    # router does not own — i.e. the SPA fallback ``/{full_path:path}`` (E-034): ``/`` and every client route
+    # 404'd whenever BASIRA_MCP=1. ``Route`` with a raw ASGI app endpoint matches MCP_PATH only (GET/POST/
+    # DELETE per the Streamable HTTP spec); the sub-app sees the same path so its own router still matches.
+    app.router.routes.insert(0, Route(MCP_PATH, endpoint=mcp_app, methods=["GET", "POST", "DELETE"]))
     return mcp_app

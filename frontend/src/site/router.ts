@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 
-export type Route = "home" | "check" | "services" | "developers" | "trust" | "about" | "notfound";
+export type Route = "home" | "check" | "services" | "developers" | "trust" | "about" | "settings" | "notfound";
 
 export const PATHS: Record<Exclude<Route, "notfound">, string> = {
   home: "/",
@@ -12,6 +12,7 @@ export const PATHS: Record<Exclude<Route, "notfound">, string> = {
   developers: "/developers",
   trust: "/trust",
   about: "/about",
+  settings: "/settings",
 };
 
 export function routeOf(pathname: string): Route {
