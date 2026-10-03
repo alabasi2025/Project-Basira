@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import resource
 import subprocess
 import sys
+import tempfile
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from pathlib import Path
@@ -22,6 +24,11 @@ from app.retrieve.index import Retriever
 from app.store import Store, load_store
 
 REPO = Path(__file__).resolve().parents[2]
+
+# Tests must never pick up a real key saved from /settings on this machine (E-051): point the
+# server-side model config at a throwaway path before any app is created.
+os.environ.setdefault("BASIRA_MODEL_CONFIG", str(Path(tempfile.gettempdir()) / "basira-test-model.json"))
+Path(os.environ["BASIRA_MODEL_CONFIG"]).unlink(missing_ok=True)
 
 # Every `client` fixture boots an app whose snapshot keeps ~15 mmap'd .npy files open for the app's
 # lifetime; with 270+ tests the default soft limit of 1024 fds is reached (ENFILE in test_snapshot).
