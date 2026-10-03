@@ -21,7 +21,7 @@ These rules are set by the project owner and override any default workflow.
 
 ## Environment
 - All writes inside `/home/user/webapp` only. Every bash command prefixed with `cd /home/user/webapp &&`.
-- Baseline of the environment: `docs/ENVIRONMENT_ANALYSIS.md`.
+- Baseline of the environment: `extra/docs/ENVIRONMENT_ANALYSIS.md`.
 
 ## Repository visibility & publication gate
 - Repo is **private during preparation** (terms §15 permits this). It must be **public at delivery** (participant guide).

@@ -6,14 +6,14 @@
 
 ## Reading order (mandatory)
 1. `AGENTS.md` (this) — role, rules, map.
-1a. **`docs/agent/README.md` → `context/IDENTITY.md` → `context/OWNER.md`** — the agent's own long-term memory (identity, owner intents, red lines, session protocol, discoveries, verified research, skills, defenses). 3 minutes.
-1b. **`docs/AGENT_PLAYBOOK.md` — how to discover your own capabilities in 10 min (machine, 300 gsk tools, model proxies, measured concurrency cap, sub-agent orchestrator). Run its §1 before touching anything.**
+1a. *(optional)* `extra/docs/agent/README.md` → `context/IDENTITY.md` → `context/OWNER.md` — agent long-term memory (moved to `extra/`, not product material).
+1b. *(optional)* `extra/docs/AGENT_PLAYBOOK.md` — self-discovery of sandbox capabilities + sub-agent orchestrator (moved to `extra/`).
 2. `docs/STATE.md` — **where we are right now**: done / in progress / next. Updated at the end of every session.
 3. `docs/DECISIONS.md` — every owner decision and every engineering decision, dated, with reason. Never re-ask a decided question.
 4. `docs/GLOSSARY.md` — project terms (AR/EN) so you speak the same language as the owner.
 5. `docs/internal/AUDIT_HANDOFF_PACKAGE.md` — the full audit of the source package (what the product is, verified facts, all P0 fixes). §12.5 is the blocking list.
 6. `docs/adr/` — architecture decision records (stack, matching, states, storage).
-7. `docs/ENVIRONMENT_ANALYSIS.md` — sandbox capabilities baseline.
+7. *(optional)* `extra/docs/ENVIRONMENT_ANALYSIS.md` — sandbox capabilities baseline (moved to `extra/`).
 8. Then the code: `backend/`, `frontend/`, `eval/`, `corpus/` — each has its own `README.md`.
 
 ## Who you are
@@ -36,22 +36,22 @@ README.md                  public-facing overview (will be rewritten for deliver
 docs/STATE.md              living status board (read every session)
 docs/DECISIONS.md          decision log
 docs/GLOSSARY.md           terminology
+docs/COMPETITION.md        what is judged, when, how (public digest of the official guide)
+docs/INTEGRATIONS.md       MCP / API / embed design
+docs/RISKS.md              living risk register
+docs/UX_LOG.md             measured UX / a11y log
 docs/adr/                  architecture decision records
+docs/manual-test/          live-verified manual test images (T-series)
 docs/internal/             audits & annex triage — NEVER PUBLISH
-docs/ENVIRONMENT_ANALYSIS.md
-docs/agent/                AGENT MEMORY: context/ discoveries/ research/ skills/ defenses/
-docs/RISKS.md              living risk register (Astra + orchestrator)
-docs/AGENT_PLAYBOOK.md     self-discovery + sub-agent playbook (read 2nd)
-docs/CAPABILITIES.md       measured proxy/model/concurrency facts
-docs/TEAM.md               multi-model team charter + protocol
-docs/model-analysis/       evidence-based model selection (تحليل النماذج العالمية)
-docs/experiments/          probe scripts + raw results (E1..E11)
-scripts/agents/            orchestrator.py — role→model runner, Semaphore(18)
 backend/                   FastAPI service (Python 3.13)
 frontend/                  React + Vite + TS (AR/EN, RTL)
 corpus/                    manifest.json, fetch + index build scripts (data/ and index/ git-ignored)
-eval/                      cases.yaml, false-alarm generator, metrics, reports
+eval/                      cases.yaml, false-alarm generator, metrics, reports, IslamicEval runners
 messages/                  ar.json / en.json — the ONLY user-facing prose
+scripts/                   bootstrap.sh / serve.sh / smoke.py
+ci/                        GitHub Actions workflow (copy to .github/workflows/ at delivery)
+extra/                     NOT PART OF THE PRODUCT — agent memory, environment probes, model
+                           research, external agent packs, review artefacts (see extra/README.md)
 .intake/                   source package (git-ignored, confidential)
 ```
 

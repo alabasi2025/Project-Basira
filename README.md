@@ -19,7 +19,7 @@
 
 | Document | Description |
 |---|---|
-| [docs/ENVIRONMENT_ANALYSIS.md](docs/ENVIRONMENT_ANALYSIS.md) | Full audit of OS, compute, runtimes, package registries, deployment paths, AI-assisted capabilities, risks & mitigations, and the recommended baseline stack |
+| [extra/docs/ENVIRONMENT_ANALYSIS.md](extra/docs/ENVIRONMENT_ANALYSIS.md) | Full audit of OS, compute, runtimes, package registries, deployment paths, AI-assisted capabilities, risks & mitigations, and the recommended baseline stack |
 
 ## Engineering Workflow
 

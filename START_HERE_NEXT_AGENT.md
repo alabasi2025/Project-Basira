@@ -5,8 +5,8 @@
 ## اقرأ بهذا الترتيب (لا تتجاوز)
 1. `docs/STATE.md` — أين نحن الآن، آخر الأرقام **المقاسة**.
 2. `docs/DECISIONS.md` — كل قرار E-001..E-046 ولماذا؛ ما رُفض ولماذا. **لا تعيد قراراً مرفوضاً بلا سبب جديد.**
-3. `handoff_agents/README.md` — نواتج وكلاء خارجيين (حزمتان مسحوبتان، ثالثة لم تصل) + **القائمة المجمَّعة لما لم يُنجَز** + تعارضات + قرارات معلّقة عند المالك.
-4. `docs/reviews/AGENT_PACKS_REVIEW.md` — منهج التعامل مع الحزم الخارجية (أعد إنتاج كل ادعاء بالقياس قبل الدمج).
+3. `extra/handoff_agents/README.md` — نواتج وكلاء خارجيين (حزمتان مسحوبتان، ثالثة لم تصل) + **القائمة المجمَّعة لما لم يُنجَز** + تعارضات + قرارات معلّقة عند المالك.
+4. `extra/docs/reviews/AGENT_PACKS_REVIEW.md` — منهج التعامل مع الحزم الخارجية (أعد إنتاج كل ادعاء بالقياس قبل الدمج).
 5. `CLAUDE.md` / `AGENTS.md` (إن وُجدا) — قواعد العمل.
 
 ## حالة الفروع
@@ -21,4 +21,4 @@
 cd backend && .venv/bin/pytest -q && cd .. && make eval-full PY=backend/.venv/bin/python && git checkout eval/REPORT.md
 cd frontend && npx tsc -b && npx oxlint && npx vitest run && npm run build
 ```
-ثم أعلن الأرقام للمالك واسأله عن القرارات المعلّقة في `handoff_agents/README.md` §5 قبل أي عمل يمسّها.
+ثم أعلن الأرقام للمالك واسأله عن القرارات المعلّقة في `extra/handoff_agents/README.md` §5 قبل أي عمل يمسّها.

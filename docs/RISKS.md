@@ -1,6 +1,6 @@
 # RISKS.md — Risk register (living; owner role 7 = GPT-6 Astra, maintained by orchestrator)
 
-> Sources of entries: (a) GPT-6 Astra risk officer run 2026-10-01 (reasoning_effort=high, two halves — lesson F12), (b) orchestrator's own observations (`docs/agent/discoveries/`), (c) model-analysis R-10..R-13, TEAM.md R-01..R-09. Every entry needs a detection signal; "no signal" is itself a risk.
+> Sources of entries: (a) GPT-6 Astra risk officer run 2026-10-01 (reasoning_effort=high, two halves — lesson F12), (b) orchestrator's own observations (`extra/docs/agent/discoveries/`), (c) model-analysis R-10..R-13, TEAM.md R-01..R-09. Every entry needs a detection signal; "no signal" is itself a risk.
 > Review cadence: at the end of every session, and before any deploy or public push.
 
 ## Part A — AI-team operational risks (Astra, half 1)
