@@ -49,6 +49,7 @@ from app.match.window import WindowHit, fuzzy_search, fuzzy_search_surah_stream
 from app.messages import Messages, load_messages
 from app.normalize import tokenize
 from app.providers import LLMClient, ProviderError, relocate
+from app.quran_meta import claimed_ref_possible
 from app.retrieve.index import Retriever
 from app.schemas import (
     CheckRequest,
@@ -61,6 +62,7 @@ from app.schemas import (
     Match,
     QuoteResult,
     SegmentModel,
+    SourceSegment,
     Span,
     Timings,
 )
@@ -71,6 +73,17 @@ from app.verify import validate_response
 log = logging.getLogger(__name__)
 
 PROVIDER_TIMEOUT_S = 8.0
+
+
+def _tag_truncated(resp: CheckResponse) -> None:
+    """B10: when spans were cut at `max_quotes`, every returned quote carries the notice (no silent cut)."""
+    if not resp.extraction_truncated:
+        return
+    for qr in resp.quotes:
+        if "extraction_truncated" not in qr.notice_keys:
+            qr.notice_keys.append("extraction_truncated")
+
+
 RETRIEVE_TOP_K = 50
 FUZZY_MAX_DOCS = 100
 
@@ -183,6 +196,8 @@ class Pipeline:
                     sp.claimed_source = find_claimed_source(text, sp.start, sp.end)
         except (ProviderError, TimeoutError):
             degraded = True
+        quotes_detected = len(spans)
+        truncated = quotes_detected > self.settings.max_quotes
         spans = spans[: self.settings.max_quotes]
         timings.extract = _ms(t0)
 
@@ -217,6 +232,7 @@ class Pipeline:
             d = decide(facts, evidence, self.th)
             d = self._foreign_gate(q, d)
             d = self._harakat_gate(q, d, carriers)
+            self._claimed_ref_notice(d, facts)
             self._quran_context_notices(d, q, carriers, rasm0_only)
             qr = self._render(i, q, d, carriers, req, extra_notices or [])
             if q.language == "en" and self.english.enabled:
@@ -239,7 +255,10 @@ class Pipeline:
             flags=flags,
             quotes=quotes,
             timings_ms=timings,
+            quotes_detected=quotes_detected,
+            extraction_truncated=truncated,
         )
+        _tag_truncated(resp)
         resp = validate_response(
             resp,
             self.store,
@@ -414,13 +433,20 @@ class Pipeline:
         if isinstance(parsed, dict) and "surah" in parsed and "ayah" in parsed:
             qref = (int(parsed["surah"]), int(parsed["ayah"]))
             ayah_to = int(parsed["ayah_to"]) if parsed.get("ayah_to") else None
-        # I10 — first ayah of the best strict-exact Quran winner (evidence is already ordered)
+        # I10 — first ayah of the best strict-exact Quran winner (evidence is already ordered).
+        # B06: a verbatim passage can occur at several places (e.g. the refrain of سورة الرحمن); when the
+        # author's claimed ayah is one of them, THAT position is the matched ref — a correct repeated
+        # reference is never reported as a mismatch.
         mref = None
         for e in evidence or ():
             if e.corpus == "tanzil" and e.is_exact and e.strict_ok:
                 r = self.store.records[e.rec_idx]
-                mref = (r.surah, r.ayah)
-                break
+                here = (r.surah, r.ayah)
+                if mref is None:
+                    mref = here
+                if qref is not None and here[0] == qref[0] and qref[1] <= here[1] <= (ayah_to or qref[1]):
+                    mref = here
+                    break
         return QuoteFacts(
             n_tokens=len(q.tokens),
             language=q.language,
@@ -433,6 +459,16 @@ class Pipeline:
             claimed_ayah_to=ayah_to,
             matched_quran_ref=mref,
         )
+
+    @staticmethod
+    def _claimed_ref_notice(d: Decision, facts: QuoteFacts) -> None:
+        """B06: an impossible claimed reference («الإخلاص 1-999», a surah with fewer ayat, a backwards range)
+        gets its own notice; the status is untouched (I8) and the mismatch logic is left alone."""
+        c = facts.claimed_quran_ref
+        if c is None or claimed_ref_possible(c[0], c[1], facts.claimed_ayah_to):
+            return
+        if "claimed_ref_invalid" not in d.notice_keys:
+            d.notice_keys.append("claimed_ref_invalid")
 
     def _quran_context_notices(
         self, d: Decision, q: _Quote, carriers: dict[int, ExactHit | WindowHit], rasm0_only: set[int]
@@ -840,10 +876,23 @@ class Pipeline:
             rng = [mapped[0][0], mapped[-1][1]]
 
         continues_to = None
+        segments: list[SourceSegment] = []
         if rec.corpus == "tanzil" and carrier is not None and win_n > 0:
             covered = records_covering(self.store, carrier.gpos, win_n)
             if len(covered) > 1:
                 continues_to = covered[-1].ref
+                # B07: every covered ayah as its own verbatim record — the proof is visible, not implied
+                for r in covered:
+                    la, le = self._labels(r, None)
+                    segments.append(
+                        SourceSegment(
+                            ref=r.ref,
+                            ref_label_ar=la,
+                            ref_label_en=le,
+                            source_text=r.display,
+                            source_url=quran_url(r.surah, r.ayah),
+                        )
+                    )
 
         grade = None
         if d.attach_grade and rec.corpus == "hadeethenc":
@@ -879,6 +928,7 @@ class Pipeline:
             score=round(ev.score, 4),
             grade=grade,
             continues_to=continues_to,
+            source_segments=segments,
         )
 
     def _diff_ops(  # noqa: PLR0912 — one branch per diff family (harakat / foreign / word), flat on purpose

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import ipaddress
 import json
 import logging
 import os
@@ -109,6 +110,57 @@ class RateLimiter:
         return True
 
 
+_IMAGE_MAGIC: tuple[tuple[bytes, str], ...] = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+)
+
+
+def sniff_image_mime(data: bytes) -> str | None:
+    """Content sniffing for the three accepted types (B12): PNG / JPEG signatures, WebP = RIFF….WEBP."""
+    for magic, mime in _IMAGE_MAGIC:
+        if data.startswith(magic):
+            return mime
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+Networks = tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]
+
+
+def client_identity(peer: str, forwarded_for: str | None, trusted: Networks) -> str:
+    """B12: walk `X-Forwarded-For` from the right, skipping trusted hops; the first untrusted address is the
+    client. Without trusted proxies, or when the peer is not trusted, the peer itself is the identity."""
+    if not _is_trusted(peer, trusted):
+        return peer
+    hops = [h.strip() for h in (forwarded_for or "").split(",") if h.strip()]
+    for hop in reversed(hops):
+        if not _is_trusted(hop, trusted):
+            return hop
+    return hops[0] if hops else peer
+
+
+def _is_trusted(addr: str, trusted: Networks) -> bool:
+    if not trusted:
+        return False
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    return any(ip in net for net in trusted)
+
+
+def parse_trusted_proxies(items: tuple[str, ...]) -> Networks:
+    out: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for it in items:
+        try:
+            out.append(ipaddress.ip_network(it, strict=False))
+        except ValueError:
+            log.warning("ignoring invalid BASIRA_TRUSTED_PROXIES entry")
+    return tuple(out)
+
+
 def _inline_script_hashes(static_dir: Path | None) -> list[str]:
     """CSP `sha256-…` tokens for every executable inline <script> in the built index.html."""
     if static_dir is None:
@@ -149,6 +201,7 @@ def _error(status: int, code: str, messages_dir: Path, **vars: Any) -> JSONRespo
 def create_app(cfg: Settings | None = None) -> FastAPI:
     cfg = cfg or default_settings
     limiter = RateLimiter(cfg.rate_limit_per_min)
+    trusted = parse_trusted_proxies(cfg.trusted_proxies)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -274,9 +327,11 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     # ------------------------------------------------------------- guards
 
     def _client_key(request: Request) -> str:
-        fwd = request.headers.get("x-forwarded-for")
-        ip = fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "?")
-        return ip
+        """Rate-limit identity (B12): the TCP peer, unless the peer is a configured trusted proxy — only then
+        the right-most *untrusted* hop of `X-Forwarded-For` is used (a client cannot mint identities by
+        sending the header itself)."""
+        peer = request.client.host if request.client else "?"
+        return client_identity(peer, request.headers.get("x-forwarded-for"), trusted)
 
     def _guard(request: Request) -> Pipeline:
         if not getattr(request.app.state, "ready", False) or request.app.state.pipeline is None:
@@ -363,6 +418,8 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         data = await image.read(MAX_IMAGE_BYTES + 1)
         if len(data) > MAX_IMAGE_BYTES:
             raise ApiError(413, "image_too_large", max_mb=MAX_IMAGE_BYTES // (1024 * 1024))
+        if sniff_image_mime(data) != mime:  # B12: the bytes must BE the declared image type
+            raise ApiError(422, "invalid_input")
         vision = request.app.state.vision
         try:
             ocr = await vision.ocr(data, mime=mime)
@@ -373,13 +430,17 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
             )
             resp.extraction_degraded = True
             return resp
-        text = ocr.text.strip()[: cfg.max_text_chars] or " "
+        full_text = ocr.text.strip()
+        text = full_text[: cfg.max_text_chars] or " "
         req = CheckRequest(text=text, ui_lang="ar" if ui_lang != "en" else "en", source_modality="image")
         notices: list[str] = []
         if vision.name == "mock":
             notices.append("ocr_mock")  # never present fixture text as if it were read from the image
+        if len(full_text) > cfg.max_text_chars:
+            notices.append("ocr_truncated")  # B10: the image held more text than one request checks — say so
         resp = await pipeline.check(req, extra_notices=notices)
         resp.ocr_text = text.strip() or None
+        resp.ocr_truncated = len(full_text) > cfg.max_text_chars
         return resp
 
     # ------------------------------------------------------------- model config (E-051, docs/MODELS.md)

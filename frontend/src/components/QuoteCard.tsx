@@ -48,7 +48,7 @@ function noticeVars(key: string, q: QuoteResult, lang: Lang): Record<string, str
     v["found_in"] = m ? sourceName(m, lang) : "";
     v["claimed"] = books.map((b) => BOOK_NAMES[b]?.[lang] ?? b).join(lang === "ar" ? " و" : " & ") || (q.claimed_source?.raw ?? "");
   }
-  if (key === "claimed_ayah_mismatch") {
+  if (key === "claimed_ayah_mismatch" || key === "claimed_ref_invalid") {
     const p = q.claimed_source?.parsed as { surah?: number; ayah?: number; ayah_to?: number | null } | undefined;
     v["found_ref"] = m ? refLabel(m, lang) : "";
     v["claimed_ref"] = q.claimed_source?.raw ?? (p?.surah !== undefined ? `${p.surah}:${p.ayah}${p.ayah_to ? "-" + p.ayah_to : ""}` : "");
@@ -86,6 +86,20 @@ function MatchView({ m, q, lang }: { m: Match; q: QuoteResult; lang: Lang }) {
             {m.source_text}
           </p>
         ))}
+      {m.source_segments && m.source_segments.length > 1 && (
+        <ol className="segments" aria-label={ui(lang, "segments")} data-testid="source-segments">
+          {m.source_segments.map((s) => (
+            <li key={s.source_url}>
+              <a href={s.source_url} target="_blank" rel="noopener noreferrer" dir="auto">
+                {lang === "ar" ? s.ref_label_ar : s.ref_label_en}
+              </a>
+              <p className="diff-text source-text" dir="rtl" lang="ar">
+                {s.source_text}
+              </p>
+            </li>
+          ))}
+        </ol>
+      )}
       {m.grade && (
         <p className="grade" dir="auto">
           {msg(lang, "notice", "grade_line", noticeVars("grade_line", q, lang))}

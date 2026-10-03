@@ -242,6 +242,18 @@ A quote that is only an **isnad** («عن أبي هريرة رضي الله عن
 المتن ليُفحص»), `matches: []`, no external links, and does **not** count as a validator rejection (wording, not a
 rejection). A chain that is verbatim in an OHD record (records carry their isnad) stays `found` — V6 proves it.
 
+### 3.11 Audit fixes B06 · B07 · B10 · B12 (E-053)
+
+| Field / notice | Where | Meaning |
+|---|---|---|
+| `matches[].source_segments[]` | `Match` | **B07.** For a quote spanning several ayat: one entry per ayah, in Mushaf order — `{ref, ref_label_ar, ref_label_en, source_text, source_url}`; `source_text` is the record's display field **byte-exact**, V1/V2 re-checked per element. Empty for single-ayah quotes. Never a generated joined line. |
+| `quotes_detected`, `extraction_truncated` | `CheckResponse` | **B10.** Spans found before the cap (`max_quotes`=30) and whether only the first ones were checked. When true, every returned quote also carries `notice_keys: ["extraction_truncated"]`. |
+| `ocr_truncated` + notice `ocr_truncated` | `/v1/check/image` | **B10.** The image text exceeded `max_text_chars`; only the first part was checked — said, not hidden. |
+| notice `claimed_ref_invalid` | quote | **B06.** The claimed reference cannot exist in the Mushaf («الإخلاص 1-999», «البقرة 300», a backwards range) — `app/quran_meta.AYAH_COUNTS` (114 surahs, Σ 6 236, test-pinned equal to Tanzil). Status untouched (I8). |
+| `claimed_ayah_mismatch` semantics | quote | **B06.** A verbatim passage that recurs (the 31 refrains of سورة الرحمن) is compared against **every** matched position, so «[الرحمن: 77]» is correct, not a mismatch; «[البقرة: 5]» still is. |
+| rate-limit identity | `_guard` | **B12.** `X-Forwarded-For` is honoured **only** when the TCP peer is in `BASIRA_TRUSTED_PROXIES` (IPs/CIDRs); then the right-most untrusted hop is the client. Default: the header is ignored — a rotating header no longer buys a fresh quota. The Dockerfile no longer passes `--forwarded-allow-ips='*'`; set `FORWARDED_ALLOW_IPS` = the same proxies. |
+| image sniffing | `/v1/check/image` | **B12.** The bytes must carry the signature of the declared type (PNG `\x89PNG\r\n\x1a\n`, JPEG `\xff\xd8\xff`, WebP `RIFF….WEBP`) or the request is `422 invalid_input` — before any provider sees it. |
+
 ## 4. Determinism contract
 
 `determinism_hash = sha256(index records sha256 ‖ loose-normalised input ‖ ordered verdicts (span, status, message_key, matched refs))`.
