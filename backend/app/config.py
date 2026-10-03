@@ -71,6 +71,8 @@ class Settings:
     )
     build_sha: str = field(default_factory=lambda: _env("BUILD_SHA", "dev"))
     thresholds: Thresholds = field(default_factory=Thresholds)
+    # Developer gate (docs/API.md, docs/INTEGRATIONS.md §3.1): MCP server at /mcp, same process, same pipeline.
+    mcp_enabled: bool = field(default_factory=lambda: _env_bool("BASIRA_MCP", False))
 
 
 settings = Settings()

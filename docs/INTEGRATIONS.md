@@ -33,7 +33,68 @@ Frontend footer already links to `/docs` (Vite proxies `/docs` and `/openapi.jso
 
 ## 3. Design — what to add (ordered by value ÷ cost)
 
-### 3.1 MCP server (owner's question «أفكر نضيف MCP») — **recommended, ~½ day**
+### 3.1 MCP server — **SHIPPED 2026-10-03 (branch `feat/dev-gate`)**; the original design follows as 3.1-design
+
+**Status:** live at `/mcp` when `BASIRA_MCP=1` (otherwise a plain 404). `backend/app/mcp_server.py`, mounted inside the
+FastAPI process, reads `app.state.pipeline` per call — one pipeline object serves REST and MCP (no second index load,
+E-038). Streamable HTTP, `stateless_http=True`, JSON responses, SDK `mcp` **2.3.0** (`MCPServer`; the v1 `FastMCP` import no
+longer exists). Tool errors reuse the API envelope `{code, message_ar, message_en}`; nothing internal leaks; nothing is stored.
+
+| tool | input | output |
+|---|---|---|
+| `verify_text` | `text`, `ui_lang` | compact verdicts per quotation + notices as sentences + `determinism_hash` |
+| `verify_quote` | `text`, `claimed_ref?` («2:255», «البقرة: 255», «البخاري 1», «رواه مسلم»), `ui_lang` | `status`, `claimed_source_mismatch`, the matched record verbatim |
+| `guard_answer` | `answer`, `ui_lang` | `clear` / `flagged` / `no_quotes` + counts + fixed summaries (docs/GUARD.md) |
+| `list_sources` | — | manifest: id, version, licence, sha256 (incl. the 18 OHD files), live counts |
+| `grounding_rules` | `ui_lang` | fixed AR/EN instructions from SAFETY.md + `safety_sha256` |
+
+Names deliberately differ from the design (`check_text` → `verify_text`) to read as *verification* next to the
+association's retrieval tools. Tests: `backend/tests/test_mcp.py` (18, real MCP client over ASGI; REST and MCP verdicts byte-equal).
+
+**Client config:** `{"mcpServers":{"basira":{"url":"https://<host>/mcp","type":"http"}}}` · local: `http://localhost:8000/mcp`.
+
+**Complementing mcp.islamiccontent.org (verified live 2026-10-03).** Their server offers 11 tools, all retrieval
+(`search, fetch, get_quran_verses, list_quran_translations, get_quran_audio, get_hadith, browse_hadith_categories,
+browse_library, get_library_item, list_library_categories, list_languages`); none takes user text and verifies it. The
+intended loop for an assistant: *fetch* with theirs → *answer* → *verify/guard* with ours. `scripts/mcp_demo.py` does
+exactly that; its unedited output:
+
+```
+$ cd backend && BASIRA_MCP=1 .venv/bin/uvicorn app.main:app --port 8000     # terminal 1
+$ backend/.venv/bin/python scripts/mcp_demo.py                               # terminal 2
+== Part 1: Basira MCP at http://localhost:8000/mcp
+  server: basira v0.1.0
+  tools/list: ['verify_text', 'verify_quote', 'guard_answer', 'list_sources', 'grounding_rules']
+  grounding_rules: states=['found', 'partial_match', 'needs_review', 'not_found'] safety_sha256=6a443a070dea…
+  verify_text('قال تعالى: ﴿إن الله مع الصابرين﴾') → hash 5785aa4af67b…
+    • found         quran        reason=None  سورة البقرة، الآية 153
+      source_text: يَٰٓأَيُّهَا ٱلَّذِينَ ءَامَنُوا۟ ٱسْتَعِينُوا۟ بِٱلصَّبْرِ وَٱلصَّلَو…
+      notice: النص المنقول جزء من الآية لا الآية كاملة؛ نص الآية كاملًا معروض بجانب نصك.
+  verify_text('قال تعالى: ﴿قل هو HELLO الله أحد﴾.') → hash 5a70649c0a33…
+    • needs_review  quran        reason=foreign_material  سورة الإخلاص، الآية 1
+      source_text: بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ قُلْ هُوَ ٱللَّهُ أَحَدٌ
+      notice: داخل الاقتباس كلمات أو أرقام أو رموز ليست من النص (مظلّلة في نصك). أزلها ثم أعد الفحص.
+  verify_text('قال ﷺ: «الدين المعاملة»') → hash a4d5b77d78e2…
+    • not_found     hadith_matn  reason=None  —
+  determinism: second call hash equal = True
+  guard_answer → flagged {'quotes': 3, 'found': 1, 'flagged': 2, 'by_status': {'found': 1, 'needs_review': 1, 'not_found': 1}}
+    The answer contains 3 quotation(s); 2 of them need review before publishing (not found verbatim in Basira's sources, or differing from the source text). Basira is a deterministic aid; "not found in our sources" is not a verdict on the text. Consult qualified scholars when in doubt.
+== Part 2: integration with https://mcp.islamiccontent.org/mcp
+  remote tools (11): ['search', 'fetch', 'get_quran_verses', 'list_quran_translations', 'get_quran_audio', 'get_hadith', 'browse_hadith_categories', 'browse_library', 'get_library_item', 'list_library_categories', 'list_languages']
+  get_quran_verses input schema keys: ['surah', 'ayah', 'through', 'translation_key', 'language']
+  calling get_quran_verses({'surah': 2, 'ayah': 153, 'through': 153, 'translation_key': 'english_saheeh'})
+  remote returned 1036 chars: ["──────── RETRIEVED FROM QURANENC — published text ────────\n\n[Surah 2, translation \"english_saheeh\"]\n\n[EXACT] the verses and their published translation …
+  verse text → Basira: 'يَٰٓأَيُّهَا ٱلَّذِينَ ءَامَنُواْ ٱسۡتَعِينُواْ بِٱلصَّبۡرِ …'
+    • found         quran        reason=None  Surah Al-Baqarah (2:153)
+      source_text: يَٰٓأَيُّهَا ٱلَّذِينَ ءَامَنُوا۟ ٱسْتَعِينُوا۟ بِٱلصَّبْرِ وَٱلصَّلَو…
+  determinism_hash 195a15343a45…
+```
+Reading: the verse text returned by `get_quran_verses` (QuranEnc's Uthmani encoding: U+06E1 small high dotless head of khah for sukun, plain U+0652 sukun elsewhere, U+0653 madda)
+is confirmed `found` 2:153 by Basira against Tanzil's encoding — the strict tier's canonical composition (E-023/E-024)
+is what makes two faithful encodings of the Mushaf agree. `remote returned 1036 chars` is their framed payload (header
++ Arabic + Saheeh International translation); only the Arabic span is sent to `verify_text`.
+
+#### 3.1-design (2026-10-01, kept for the record)
 
 * **Transport**: streamable-HTTP, mounted on the same FastAPI process at `/mcp` (python `mcp` SDK 2.2.0 is on the index; FastAPI 0.142 / Starlette 1.7 are compatible). Remote-first like quran-mcp; `stdio` optional for local IDEs.
 * **Tools (read-only, deterministic, same pipeline as `/v1/check` — no second code path):**

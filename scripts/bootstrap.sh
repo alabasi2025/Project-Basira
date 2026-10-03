@@ -8,7 +8,7 @@ python3 corpus/fetch.py
 echo "== 2/5 python venv + deps"
 [ -d backend/.venv ] || python3 -m venv backend/.venv
 backend/.venv/bin/pip install -q --upgrade pip
-backend/.venv/bin/pip install -q -e "backend[dev]"
+backend/.venv/bin/pip install -q -e "backend[dev,mcp]"
 echo "== 3/5 build index (skipped if up to date)"
 if [ ! -f corpus/index/meta.json ] || [ corpus/manifest.json -nt corpus/index/meta.json ] || [ corpus/build_index.py -nt corpus/index/meta.json ]; then
   backend/.venv/bin/python corpus/build_index.py >/dev/null

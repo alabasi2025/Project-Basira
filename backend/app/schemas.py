@@ -2,9 +2,25 @@
 
 from __future__ import annotations
 
+import json
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+_EXAMPLES_FILE = Path(__file__).with_name("openapi_examples.json")
+
+
+@lru_cache(maxsize=1)
+def openapi_examples() -> dict[str, dict[str, Any]]:
+    """Real `/v1/check` request/response pairs for the four states, captured from the full corpus
+    (mock provider) — see docs/API.md §Examples. `source_text` is the corpus record verbatim."""
+    if not _EXAMPLES_FILE.exists():
+        return {}
+    data: dict[str, dict[str, Any]] = json.loads(_EXAMPLES_FILE.read_text(encoding="utf-8"))
+    return data
+
 
 Status = Literal["found", "partial_match", "needs_review", "not_found"]
 Kind = Literal["quran", "hadith_matn", "isnad", "attributed_saying", "unknown"]
@@ -28,6 +44,10 @@ class CheckOptions(BaseModel):
 
 
 class CheckRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [v["request"] for v in openapi_examples().values()]}
+    )
+
     text: str = Field(min_length=1, max_length=5000)
     ui_lang: Literal["ar", "en"] = "ar"
     source_modality: Literal["text", "image"] = "text"
@@ -149,6 +169,10 @@ class Timings(BaseModel):
 
 
 class CheckResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [v["response"] for v in openapi_examples().values()]}
+    )
+
     request_id: str
     disclaimer_key: str = "footer"
     transparency_key: str = "transparency_notice"
@@ -187,6 +211,56 @@ class SourceInfo(BaseModel):
     in_repo: bool
     records: int
     downloaded_at: str | None = None
+    sha256: str = ""  # pinned upstream hash (developer gate; empty for multi-file sources like OHD)
+
+
+# --------------------------------------------------------------------------- developer gate (docs/API.md)
+
+
+class GuardRequest(BaseModel):
+    """A chatbot answer to check before it reaches the user (docs/GUARD.md)."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "answer": "قال تعالى: ﴿إن الله مع الصابرين﴾ وقال ﷺ: «طلب العلم فريضة على كل مسلم ومسلمة»",
+                    "ui_lang": "ar",
+                }
+            ]
+        }
+    )
+
+    answer: str = Field(min_length=1, max_length=5000)
+    ui_lang: Literal["ar", "en"] = "ar"
+
+
+class GuardCounts(BaseModel):
+    quotes: int
+    found: int
+    flagged: int
+    by_status: dict[str, int]
+
+
+class GuardResponse(BaseModel):
+    verdict: Literal["clear", "flagged", "no_quotes"]
+    counts: GuardCounts
+    flagged_quote_ids: list[str]
+    quotes: list[dict[str, Any]]  # compact quotes (same shape as the MCP verify_text tool)
+    flags: dict[str, bool]
+    extraction_degraded: bool
+    summary_ar: str
+    summary_en: str
+    determinism_hash: str
+    corpus: dict[str, str]
+
+
+class RulesResponse(BaseModel):
+    ui_lang: Literal["ar", "en"]
+    text: str
+    states: list[str]
+    source: str
+    safety_sha256: str
 
 
 class HealthResponse(BaseModel):

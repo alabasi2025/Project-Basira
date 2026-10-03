@@ -22,7 +22,9 @@ from app.retrieve.translations import Candidate, TranslationIndex, normalize_en
 REPO = Path(__file__).resolve().parents[2]
 PKL = REPO / "corpus" / "index" / "translations.pkl"
 
-pytestmark = pytest.mark.skipif(not PKL.exists(), reason="translations index not built (fetch_translations + build_index)")
+pytestmark = pytest.mark.skipif(
+    not PKL.exists(), reason="translations index not built (fetch_translations + build_index)"
+)
 
 # (quote, expected ref, measured top-1 score, measured rank) — rank must stay ≤ 5; top-1 ≥ 90 % of measured.
 QURAN_CASES: list[tuple[str, str, float, int]] = [
@@ -31,10 +33,20 @@ QURAN_CASES: list[tuple[str, str, float, int]] = [
     ("whoever kills a soul it is as if he had slain mankind entirely", "5:32", 1.0141, 1),
     ("And kill them wherever you find them", "2:191", 1.0904, 1),
     ("We have not sent you except as a mercy to the worlds", "21:107", 1.3480, 1),
-    ("Allah does not burden a soul beyond that it can bear", "2:286", 0.7834, 4),  # popular wording ≠ either translation
+    (
+        "Allah does not burden a soul beyond that it can bear",
+        "2:286",
+        0.7834,
+        4,
+    ),  # popular wording ≠ either translation
 ]
 HADITH_CASES: list[tuple[str, str, float, int]] = [
-    ("None of you truly believes until he loves for his brother what he loves for himself", "4717", 1.1781, 1),
+    (
+        "None of you truly believes until he loves for his brother what he loves for himself",
+        "4717",
+        1.1781,
+        1,
+    ),
     ("Religion is sincerity", "4309", 1.3384, 2),  # 66516 is the same hadith under a second HadeethEnc id
     ("Be in this world as if you were a stranger or a traveler", "4704", 0.7851, 1),
 ]
@@ -60,7 +72,9 @@ def _rank(cands: list[Candidate], ref: str, kind: str) -> int | None:
 
 
 @pytest.mark.parametrize(("quote", "ref", "measured_top1", "measured_rank"), QURAN_CASES)
-def test_famous_ayat_in_top5(idx: TranslationIndex, quote: str, ref: str, measured_top1: float, measured_rank: int) -> None:
+def test_famous_ayat_in_top5(
+    idx: TranslationIndex, quote: str, ref: str, measured_top1: float, measured_rank: int
+) -> None:
     cands = idx.candidates(quote, 5)
     assert len(cands) == 5
     rank = _rank(cands, ref, "quran")
@@ -71,7 +85,9 @@ def test_famous_ayat_in_top5(idx: TranslationIndex, quote: str, ref: str, measur
 
 
 @pytest.mark.parametrize(("quote", "ref", "measured_top1", "measured_rank"), HADITH_CASES)
-def test_hadeethenc_hadith_in_top5(idx: TranslationIndex, quote: str, ref: str, measured_top1: float, measured_rank: int) -> None:
+def test_hadeethenc_hadith_in_top5(
+    idx: TranslationIndex, quote: str, ref: str, measured_top1: float, measured_rank: int
+) -> None:
     cands = idx.candidates(quote, 5)
     rank = _rank(cands, ref, "hadith")
     assert rank is not None and rank <= measured_rank, [(c.kind, c.ref, c.score) for c in cands]
