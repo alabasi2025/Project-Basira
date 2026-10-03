@@ -24,6 +24,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
+from mcp.server.mcpserver.exceptions import ToolError
 from starlette.applications import Starlette
 
 from app import __version__
@@ -46,8 +47,8 @@ TOOL_NAMES: tuple[str, ...] = (
 )
 
 
-class ToolInputError(Exception):
-    """Raised inside a tool; the MCP SDK turns it into ``isError=true`` with this message."""
+class ToolInputError(ToolError):
+    """Deliberate tool error: the SDK forwards its message to the client as ``isError=true``."""
 
 
 def _envelope(code: str, settings: Settings, **vars: Any) -> str:
