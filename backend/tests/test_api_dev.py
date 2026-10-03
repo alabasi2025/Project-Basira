@@ -141,7 +141,7 @@ async def test_openapi_examples_are_lexicon_clean() -> None:
                 assert scan_forbidden(m["ref_label_ar"]) == [] and scan_forbidden(m["ref_label_en"]) == []
 
 
-# --------------------------------------------------------------------------- verification receipt (E-050)
+# --------------------------------------------------------------------------- verification receipt (E-052)
 
 RECEIPT_TEXT = "قال تعالى: ﴿إن الله مع الصابرين﴾ وقال ﷺ: «طلب العلم فريضة على كل مسلم ومسلمة»"
 
