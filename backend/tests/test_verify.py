@@ -225,3 +225,50 @@ def test_v6_message_keys_exist_and_are_clean() -> None:
         m = load_messages(MESSAGES, lang)
         assert m.has("status", "needs_review_unproven")
         assert scan_forbidden(m.get("status", "needs_review_unproven")) == []
+
+
+# --------------------------------------------------------------------------- B05 (attribution_only)
+
+
+def test_b05_attribution_only_kind_classifies_without_a_matn() -> None:
+    from app.verify import attribution_only_kind  # noqa: PLC0415
+
+    # attribution only: a takhrij phrase with no text of its own
+    assert attribution_only_kind("رواه البخاري") == "attribution"
+    assert attribution_only_kind("«متفق عليه»") == "attribution"
+    assert attribution_only_kind("أخرجه مسلم في صحيحه") == "attribution"
+    assert attribution_only_kind("قال ﷺ: «رواه البخاري ومسلم»") == "attribution"  # introducer kept by extractor
+    # isnad only: a chain of narrators that stops before any matn
+    assert attribution_only_kind("عن أبي هريرة رضي الله عنه قال: قال رسول الله صلى الله عليه وسلم:") == "isnad"
+    assert attribution_only_kind("حدثنا عبد الله بن يوسف قال أخبرنا مالك عن نافع عن ابن عمر") == "isnad"
+    # anything with words of its own is NOT attribution-only (fixture matn + a verbatim narrator line)
+    assert attribution_only_kind("إنما الأعمال بالنيات") is None
+    assert attribution_only_kind("قال ﷺ: «إنما الأعمال بالنيات»") is None
+    assert attribution_only_kind("إن الله مع الصابرين") is None
+    assert attribution_only_kind("") is None
+
+
+def test_b05_attribution_only_rewords_not_found_without_counting_a_rejection() -> None:
+    nf = quote(status="not_found", key="not_found_hadith", quoted_text="رواه البخاري", matches=[])
+    nf.external_search_links = ["https://example.invalid/search"]
+    nf.total_positions = 3
+    out = validate_response(resp(nf), tiny_store(), MESSAGES)
+    q = out.quotes[0]
+    assert out.validator_rejections == 0  # wording, not a rejection
+    assert q.status == "needs_review" and q.review_reason == "attribution_only"
+    assert q.message_key == "needs_review_attribution_only"
+    assert q.matches == [] and q.external_search_links == [] and q.total_positions == 0
+
+
+def test_b05_never_touches_a_found_quote() -> None:
+    out = validate_response(resp(quote(quoted_text="إن الله مع الصابرين")), tiny_store(), MESSAGES)
+    assert out.quotes[0].status == "found" and out.quotes[0].review_reason is None
+
+
+def test_b05_message_keys_exist_and_are_clean() -> None:
+    from app.messages import load_messages, scan_forbidden  # noqa: PLC0415
+
+    for lang in ("ar", "en"):
+        m = load_messages(MESSAGES, lang)
+        assert m.has("status", "needs_review_attribution_only")
+        assert scan_forbidden(m.get("status", "needs_review_attribution_only")) == []
