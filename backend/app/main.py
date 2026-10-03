@@ -36,6 +36,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import __version__
+from app.byok import ByokError, build_providers, catalog_payload, parse_headers, verify_key
 from app.config import Settings
 from app.config import settings as default_settings
 from app.devgate import DevGateError, grounding_rules
@@ -174,7 +175,13 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=list(cfg.cors_origins),
         allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type", "X-Eval-Key"],
+        allow_headers=[
+            "Content-Type",
+            "X-Eval-Key",
+            "X-Basira-LLM-Key",
+            "X-Basira-LLM-Model",
+            "X-Basira-LLM-Base",
+        ],
         max_age=600,
     )
 
@@ -228,6 +235,10 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     @app.exception_handler(ApiError)
     async def _api_error(_: Request, exc: ApiError) -> JSONResponse:
         return _error(exc.status, exc.code, cfg.messages_dir, **exc.vars)
+
+    @app.exception_handler(ByokError)
+    async def _byok_error(_: Request, exc: ByokError) -> JSONResponse:
+        return _error(400, exc.code, cfg.messages_dir)
 
     @app.exception_handler(DevGateError)
     async def _devgate_error(_: Request, exc: DevGateError) -> JSONResponse:
@@ -310,7 +321,12 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
             raise ApiError(413, "text_too_long", max=cfg.max_text_chars)
         if not req.text.strip():
             raise ApiError(422, "invalid_input")
-        resp = await pipeline.check(req)
+        byok = parse_headers(request.headers)
+        if byok is None:
+            resp = await pipeline.check(req)
+        else:
+            llm, _vision, picker = build_providers(byok)
+            resp = await pipeline.check(req, llm=llm, picker=picker)
         # Developer gate: the reproducibility contract is also a header, so proxies/log pipelines can
         # record it without parsing the body (docs/API.md §Determinism).
         return JSONResponse(
@@ -338,8 +354,13 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         data = await image.read(MAX_IMAGE_BYTES + 1)
         if len(data) > MAX_IMAGE_BYTES:
             raise ApiError(413, "image_too_large", max_mb=MAX_IMAGE_BYTES // (1024 * 1024))
+        byok = parse_headers(request.headers)
+        vision = request.app.state.vision
+        llm = picker = None
+        if byok is not None:
+            llm, vision, picker = build_providers(byok)
         try:
-            ocr = await request.app.state.vision.ocr(data, mime=mime)
+            ocr = await vision.ocr(data, mime=mime)
         except ProviderError:
             # OCR unavailable → honest empty result, flagged (never a guess)
             resp = await pipeline.check(
@@ -350,11 +371,30 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         text = ocr.text.strip()[: cfg.max_text_chars] or " "
         req = CheckRequest(text=text, ui_lang="ar" if ui_lang != "en" else "en", source_modality="image")
         notices: list[str] = []
-        if request.app.state.vision.name == "mock":
+        if vision.name == "mock":
             notices.append("ocr_mock")  # never present fixture text as if it were read from the image
-        resp = await pipeline.check(req, extra_notices=notices)
+        resp = await pipeline.check(req, extra_notices=notices, llm=llm, picker=picker)
         resp.ocr_text = text.strip() or None
         return resp
+
+    # ------------------------------------------------------------- BYOK (E-051, docs/MODELS.md)
+    @app.get("/v1/models")
+    async def models() -> Any:
+        """Curated model catalog with measured numbers. Static; no key needed."""
+        return {
+            "default": next(m["id"] for m in catalog_payload() if m["default"]),
+            "models": catalog_payload(),
+        }
+
+    @app.post("/v1/models/verify", responses={400: {"model": ErrorResponse}, 429: {"model": ErrorResponse}})
+    async def models_verify(request: Request) -> Any:
+        """Prove a key+model pair works with one 5-token completion. The key is read from the header,
+        used once, and discarded; the response never echoes it."""
+        _guard(request)
+        byok = parse_headers(request.headers)
+        if byok is None:
+            raise ByokError("byok_key_invalid")
+        return await verify_key(byok)
 
     @app.get("/v1/sources", response_model=list[SourceInfo])
     async def sources(request: Request) -> list[SourceInfo]:

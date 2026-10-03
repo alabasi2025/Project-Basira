@@ -101,17 +101,21 @@ class EnglishGate:
             out.append(self._to_model(c, rec))
         return out
 
-    async def run(self, text: str, k: int = DEFAULT_K) -> EnglishGateResult:
+    async def run(
+        self, text: str, k: int = DEFAULT_K, *, picker: EnglishPicker | None = None
+    ) -> EnglishGateResult:
+        """``picker`` overrides the gate's default picker for this call (BYOK, E-051)."""
         cands = self.candidates(text, k)
         if not cands:
             return EnglishGateResult([], "none")
         idx = self._rule_pick(cands)
         how = "rule" if idx is not None else "none"
-        if idx is None and self.picker is not None:
+        picker = picker or self.picker
+        if idx is None and picker is not None:
             try:
-                got = await self.picker.pick(text, cands)
+                got = await picker.pick(text, cands)
             except Exception as exc:
-                log.warning("english picker %s failed: %s", self.picker.name, exc.__class__.__name__)
+                log.warning("english picker %s failed: %s", picker.name, exc.__class__.__name__)
                 got = None
             if got is not None and 0 <= got < len(cands):
                 idx, how = got, "model"

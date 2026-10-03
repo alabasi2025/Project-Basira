@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.config import Settings
-from app.english_gate import EnglishGate
+from app.english_gate import EnglishGate, EnglishPicker
 from app.extract.anchor import detect
 from app.extract.foreign import foreign_runs
 from app.extract.rules import (
@@ -148,19 +148,29 @@ class Pipeline:
 
     # ------------------------------------------------------------------ public
 
-    async def check(self, req: CheckRequest, *, extra_notices: list[str] | None = None) -> CheckResponse:
+    async def check(
+        self,
+        req: CheckRequest,
+        *,
+        extra_notices: list[str] | None = None,
+        llm: LLMClient | None = None,
+        picker: EnglishPicker | None = None,
+    ) -> CheckResponse:
+        """``llm``/``picker`` override the process-wide providers for this call only (BYOK, E-051).
+        The deterministic core — rules, matching, validator, hash — is untouched by the choice."""
         t_start = time.perf_counter()
         text = req.text
         timings = Timings()
+        llm = llm or self.llm
 
         # --- 1. extraction (rules always; provider may add spans; never blocks the answer)
         t0 = time.perf_counter()
         spans = extract_spans(text)
         spans = self._augment_spans(text, spans)
         degraded = False
-        provider_name = self.llm.name
+        provider_name = llm.name
         try:
-            res = await asyncio.wait_for(self.llm.extract(text), timeout=PROVIDER_TIMEOUT_S)
+            res = await asyncio.wait_for(llm.extract(text), timeout=PROVIDER_TIMEOUT_S)
             degraded = res.degraded
             for p in res.quotes:
                 loc = relocate(text, p)
@@ -210,7 +220,7 @@ class Pipeline:
             self._quran_context_notices(d, q, carriers, rasm0_only)
             qr = self._render(i, q, d, carriers, req, extra_notices or [])
             if q.language == "en" and self.english.enabled:
-                eg = await self.english.run(q.text)
+                eg = await self.english.run(q.text, picker=picker)
                 qr.english_candidates = eg.candidates
                 qr.picker = eg.picker  # type: ignore[assignment]
                 if eg.candidates:

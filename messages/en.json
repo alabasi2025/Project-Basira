@@ -85,6 +85,9 @@
     "rate_limited": "Too many requests in a short time; please try again shortly.",
     "degraded": "The service is loading or partially unavailable; please try again in a moment.",
     "internal": "An unexpected error occurred.",
-    "image_too_large": "The image exceeds the allowed size ({max_mb} MB)."
+    "image_too_large": "The image exceeds the allowed size ({max_mb} MB).",
+    "byok_key_invalid": "The model key is missing or malformed. Enter a valid Genspark key on the settings page.",
+    "byok_model_unknown": "The requested model is not in the approved list. Choose one from the list.",
+    "byok_base_not_allowed": "That service URL is not allowed."
   }
 }
