@@ -559,6 +559,12 @@ kbd {
 main.container:has(.workspace) {
   inline-size: min(100% - 2 * var(--bs-sp-4), 1320px);
 }
+/* E-UX-01: targets the page scrolls to after a check. The offset keeps them clear of the sticky
+   .topbar (64–80px measured) so the summary line is never hidden under it. */
+.reveal-target {
+  scroll-margin-block-start: 96px;
+  outline: none;
+}
 .results {
   margin-block-start: var(--bs-sp-5);
   display: flex;
