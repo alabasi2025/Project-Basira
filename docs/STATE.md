@@ -32,6 +32,9 @@ Then read in this order: `AGENTS.md` → this file → `docs/DECISIONS.md` → `
 
 ## 0.9 Branch design/claude (2026-10-03) — UI v3, see DECISIONS E-050 (renumbered from E-047 at merge; E-047 = English gate data layer). Merged to main 2026-10-03; owner review pending. Run: `pm2 start ecosystem.config.cjs` (API :8000 serves frontend/dist; UI preview :3000).
 
+## 0.95 Design dossier + mobile UX (2026-10-05) — DECISIONS E-055
+`docs/design/README.md`: identity research, seal geometry (guard: `python3 docs/design/brand/seal.py --check`), IA of `/` and `/check`, phone tap flow, identity v4 **implemented** (E-056: `frontend/src/site/identity.css`, seal from `seal.py`, axe 0/32), and the mobile battery (47/66 → 66/66, `docs/design/evidence/`). Code fixes E-UX-01…05 shipped in `Check.tsx` / `lux.css`.
+
 ## 1. Done (verified, committed)
 
 | **English gate wired (E-048, 2026-10-03)** | `backend/app/english_gate.py`, `providers/openai_compat.py::OpenAICompatPicker`, `schemas.EnglishCandidate`, `pipeline` (per EN quote), `main.py` (`make_picker`), fixture `translations.pkl`, `tests/test_english_gate.py` (17), `eval/run_english_picker.py` | ✅ | rule-only 11/23 correct · 0 wrong; +model 21–22/23 · 0 wrong; negatives 0/7 (3 models × 2 repeats). pytest **217/217** · lint clean · SMOKE OK · eval-full 150/150, FA 0/500. |
